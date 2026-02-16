@@ -3,6 +3,8 @@
 ![CI/CD: Active](https://img.shields.io/badge/CI%2FCD-Active-brightgreen)
 ![Build: Passing](https://img.shields.io/badge/Build-Passing-brightgreen)
 
+- **Repositório:** [https://github.com/duduzinho15/A](https://github.com/duduzinho15/A)
+
 Plataforma automatizada para coleta, análise, geração e publicação de vídeos usando IA, com orquestração no n8n e processamento central no `python_service`.
 
 ## Visão Geral
