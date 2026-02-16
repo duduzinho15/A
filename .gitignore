@@ -1,0 +1,67 @@
+# System Files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+python_service/venv/
+.pytest_cache/
+
+# Environment Variables & Secrets (CRITICA)
+.env
+.env.*
+! .env.example
+credentials.json
+token.json
+client_secret.json
+
+# Logs
+*.log
+*.txt
+python_service_logs.txt
+upload_log_host.txt
+upload_log_debug.txt
+npm-debug.log*
+
+# Docker & Temporary Data
+data/
+data_midia/
+.tmp*/
+.drivedownload/
+.driveupload/
+legacy/
+monitor_logs.ps1
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# n8n & Workflow Custom
+n8n_custom/
+workflow_producao_v6_timeout.json
+workflow_producao_v7_fix.json
+execucao_*.json
+
+# Scripts Temporários/Debug
+debug_*.py
+temp_*.py
+temp_*/
+reset_*.ps1
+check_*.py
+fail_*.py
+fix_*.py
+patch_*.py
+test_*.py
+update_*.py
+
+# Node/Frontend
+node_modules/
+dist/
+build/
