@@ -3,7 +3,7 @@
 # =============================================================================
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel, HttpUrl
-from typing import Optional, List
+from typing import Optional, List, Union, Any
 from app.utils.database import get_db_connection
 from app.services import video_engine
 from psycopg2.errors import UniqueViolation
@@ -23,7 +23,7 @@ class ConfigModel(BaseModel):
 
 class JobCreate(BaseModel):
     title: str
-    script: str
+    script: Union[str, dict, Any]
     type: str  # "Highlight" ou "Noticia"
     assets: AssetsModel
     config: ConfigModel

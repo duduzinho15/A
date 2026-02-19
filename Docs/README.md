@@ -55,20 +55,27 @@ Serviços principais do `docker-compose.yml`:
 
 Arquivo principal:
 
-- `workflow_producao_v6_timeout.json`
+- `workflow_producao_v9.json`
 
-Pontos importantes da versão v6:
+Pontos importantes da versão v8:
 
 - triagem com IA antes da geração
 - criação e acompanhamento de job (`/jobs`)
-- lógica de loop breaker (máx. 20 tentativas)
-- marcação explícita de timeout no job
+- lógica de loop breaker (máx. 20 tentativas) corrigida com saída OR
+- marcação explícita de timeout no job e reset de jobs stuck (>1h)
 - publicação multicanal via `/publish/multi`
 
 ### Dica de Expressões no Publica Multi
 
 - Sempre use `$if($node["Nome"].isExecuted, valor, fallback)` para nós em branches paralelas.
 - Prefira modo **Parameters** ("Using Fields") em HTTP Request quando há muitas expressões complexas.
+
+### Evitar Skips em Branches Paralelas (Ordem de Execução n8n)
+
+- n8n processa left-to-right/top-to-bottom — use Merge Append + Always Output Data = true para esperar todos.
+- Aplicado em: `Merge Contexto Roteiro`, `Merge Assets`, `Merge Suggest`.
+- Para sub-cadeias seriais (ex: A → B → C em paralelo): Continue On Fail = true em todos + Set após Merge para forçar output.
+- Teste: Execute Merge isolado → output tem dados de todos branches.
 
 ## API do Python Service
 
@@ -107,7 +114,7 @@ A publicação no YouTube é feita pelo endpoint `POST /publish/multi` quando `p
 Modo atual de testes:
 
 - publicação em `private` para validar qualidade do vídeo e metadados antes de abrir para público;
-- no workflow v6 isso está explícito no node `Publica Multi`.
+- no workflow v8 isso está explícito no node `Publica Multi`.
 
 Pré-requisitos:
 
@@ -167,7 +174,7 @@ Acessos locais:
 
 1. Abra `http://localhost:5679`.
 2. Crie ou limpe o workflow de produção antigo.
-3. Importe `workflow_producao_v6_timeout.json`.
+3. Importe `workflow_producao_v9.json`.
 4. Configure credenciais dos nós externos (ex.: Brave/Serper/Tavily quando aplicável).
 5. Ative o workflow.
 
@@ -184,6 +191,15 @@ Para validar somente publicação:
 ```bash
 docker exec python_service sh -lc "cd /app && PYTHONPATH=/app pytest -q tests/test_publish.py"
 ```
+
+### ✅ 4. Robustez na Extração de Notícias
+
+- **Google News Decoder V4**: Sistema híbrido para resolver links "news.google.com":
+  - **Nível 1**: Requests com Headers (para redirects simples).
+  - **Nível 2**: RPC BatchExecute (protocolo interno do Google).
+  - **Nível 3**: FlareSolverr (bypass de Cloudflare/Consent simples).
+  - **Nível 4 (Final)**: **Playwright Headless** (navegador real para resolver redirects complexos de JavaScript).
+- Endpoint unificado: `POST /extract/` lida automaticamente com a decodificação antes de extrair o texto.
 
 ## Operação e Debug
 
@@ -202,7 +218,7 @@ docker compose ps
 ## Estado Atual
 
 - Infra principal operacional
-- Workflow v6 com controle de timeout/retry
+- Workflow v8 com controle de timeout/retry e conexões corrigidas
 - Publicação YouTube integrada
 - Publicação TikTok via uploader CLI com fallback para Telegram
 - CI/CD e suíte de testes em evolução contínua

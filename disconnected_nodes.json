@@ -1,0 +1,263 @@
+
+{
+  "nodes": [
+    {
+      "parameters": {
+        "url": "={{ $node[\"Monitora FreshRSS\"].json.link }}",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 10
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text",
+              "outputPropertyName": "texto_materia"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -16656,
+        6472
+      ],
+      "id": "7711755e-5189-48a1-ac75-ec0128db811f",
+      "name": "Descobre Link Real"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.all();\nconst groups = {\n  premier_league: [],\n  la_liga: [],\n  serie_a: [],\n  brasileirao: [],\n  outros: []\n};\n\ninput.forEach(item => {\n  const video = item.json;\n  const competition = (video.competition || '').toLowerCase();\n  \n  if (competition.includes('premier league')) groups.premier_league.push(video);\n  else if (competition.includes('la liga')) groups.la_liga.push(video);\n  else if (competition.includes('serie a')) groups.serie_a.push(video);\n  else if (competition.includes('brasileirão') || competition.includes('brazil')) groups.brasileirao.push(video);\n  else groups.outros.push(video);\n});\n\nreturn { json: groups };"
+      },
+      "id": "213af70a-7da9-4a04-8de8-bdfee01f8d0e",
+      "name": "Filtra Ligas (Telegram)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16656,
+        6696
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "b91632d4-22e4-4f6d-899c-2e3a49d0aa12",
+      "name": "Envio Telegram Gols",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        -16432,
+        6696
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5679/webhook/8805f345-6dd0-4fa4-a231-851ca3fbf0af",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { executionId: $execution.id } }}",
+        "options": {}
+      },
+      "id": "4baa4abd-a71d-43d3-b5f7-d94f1106171b",
+      "name": "Log Execution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -16208,
+        6696
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/publish/multi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "video_path",
+              "value": "={{ $json.video_path }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $node['IA Metadata'].isExecuted ? $node['IA Metadata'].json.title : $node['Parse Roteiro'].json.titulo }}"
+            },
+            {
+              "name": "description",
+              "value": "={{ $node['IA Metadata'].isExecuted ? ($node['IA Metadata'].json.description || $node['Parse Roteiro'].json.hook || 'Vídeo Novo!') : ($node['Parse Roteiro'].json.hook || 'Vídeo Novo!') }}"
+            },
+            {
+              "name": "platforms",
+              "value": "={{ ['youtube', 'tiktok'] }}"
+            },
+            {
+              "name": "privacy",
+              "value": "private"
+            },
+            {
+              "name": "hashtags",
+              "value": "={{ ($node['IA Metadata'].isExecuted && $node['IA Metadata'].json.tags) ? $node['IA Metadata'].json.tags : [] }}"
+            },
+            {
+              "name": "job_id",
+              "value": "={{ $node['Gera Vídeo Híbrido'].json.job_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "5632abe1-4f4f-4667-8d4a-c2a106e41f14",
+      "name": "Publica Multi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -16288,
+        6368
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'http://python_service:8000/jobs/' + $node['Gera Vídeo Híbrido'].json.job_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const results = $json.results || {}; const youtubeOk = results.youtube?.status === 'success'; const tiktokOk = results.tiktok?.status === 'success'; const published = youtubeOk || tiktokOk; return { status: published ? 'published' : 'failed', published, metadata_post: results, error_message: published ? null : 'Falha em todas as plataformas de publicação' }; })() }}",
+        "options": {}
+      },
+      "id": "116dcecf-11da-49bd-a30a-93166c9f8a39",
+      "name": "Update DB Final",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -15616,
+        6368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ ($json.results && $json.results.tiktok && $json.results.tiktok.status === 'error') || $json.platforms.includes('manual') }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "fb15478f-3670-4c76-b634-83b94cd3658a",
+      "name": "If TikTok Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -16064,
+        6368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "?? **Falha no Auto-Post (ou Manual Required)** ??\\n\\n?? **Título:** {{ $node['IA Metadata'].isExecuted ? $node['IA Metadata'].json.title : $node['Parse Roteiro'].json.titulo }}\\n??? **Hashtags:** {{ ($node['IA Metadata'].isExecuted && $node['IA Metadata'].json.tags ? $node['IA Metadata'].json.tags : []).join(' ') }}\\n?? **Vídeo:** `{{ $json.video_path }}`\\n\\n?? *O TikTok retornou erro ou o envio foi marcado como manual.*\\n?? [Clique para Postar Manualmente](https://www.tiktok.com/upload?lang=pt-BR)"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30
+        }
+      },
+      "id": "1db8b7ed-2824-403a-bc72-824187ea4baa",
+      "name": "Notifica Telegram Manual Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -15840,
+        6304
+      ],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Filtra Ligas (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Envio Telegram Gols",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envio Telegram Gols": {
+      "main": [
+        [
+          {
+            "node": "Log Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publica Multi": {
+      "main": [
+        [
+          {
+            "node": "If TikTok Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If TikTok Error": {
+      "main": [
+        [
+          {
+            "node": "Notifica Telegram Manual Post",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update DB Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notifica Telegram Manual Post": {
+      "main": [
+        [
+          {
+            "node": "Update DB Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

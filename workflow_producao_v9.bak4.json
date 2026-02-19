@@ -1,0 +1,2102 @@
+{
+  "name": "Produção V9 - IA + Automação (Vídeo)",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "bcfb25c9-9df0-47ff-9fcf-c0da367aa552",
+      "name": "É Novo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        4992,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/ai/analyze",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { content: $node['Monitora FreshRSS'].json.title + ' ' + ($node['Monitora FreshRSS'].json.contentSnippet || ''), context: 'FreshRSS' } }}",
+        "options": {}
+      },
+      "id": "5b116e2b-7312-418b-afc5-3469084477cf",
+      "name": "IA Triagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        5216,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst res = $input.first().json;\nreturn {\n  json: {\n    decisao: {\n      vale_video: res.relevant,\n      motivo: res.reasoning,\n      priority: res.priority || 'low'\n    }\n  }\n};\n"
+      },
+      "id": "c82bc0d2-9ce0-4ccf-89a5-59d7a3659cf4",
+      "name": "Parse Triagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5440,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $node['Parse Triagem'].json.decisao.vale_video }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "b708d0a2-018f-4804-a529-82119e40ce12",
+      "name": "Vale Vídeo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        5664,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://suggestqueries.google.com/complete/search?client=firefox&hl=pt&q={{ encodeURIComponent($node[\"Monitora FreshRSS\"].json.title) }}",
+        "options": {
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "id": "27819f8c-2eef-4ad2-964c-44c17f0644e5",
+      "name": "Google Suggest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        7232,
+        1152
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://api.search.brave.com/res/v1/suggest/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $node[\"Monitora FreshRSS\"].json.title }}"
+            },
+            {
+              "name": "count",
+              "value": "10"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Subscription-Token",
+              "value": "={{ $env[\"BRAVE_API_KEY\"] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e30129c9-5561-4648-9588-0096537b0264",
+      "name": "Brave Suggestions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        7232,
+        1344
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/enrich/sportsdb",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { query: $node[\"Monitora FreshRSS\"].json.title } }}",
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "id": "a78125c1-7b34-4be4-9ce6-b00daf38e83f",
+      "name": "TheSportsDB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        8576,
+        1536
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'llama3.2', format: 'json', stream: false, messages: [{ role: 'system', content: 'Voc\\u00ea \\u00e9 um Narrador Esportivo YouTuber (Curioso, Energ\\u00e9tico, Pol\\u00eamico). Crie um roteiro de V\\u00cdDEO CURTO (Shorts/Reels) com M\\u00cdNIMO 300 PALAVRAS.\\n\\nESTRUTURA:\\n1. GANCHO (3s)\\n2. CONTEXTO (15s)\\n3. AN\\u00c1LISE (30s)\\n4. CTA (5s)\\n\\nFORMATO JSON OBRIGAT\\u00d3RIO:\\n{\\n \\\"roteiro\\\": \\\"Texto completo do roteiro...\\\",\\n \\\"titulo\\\": \\\"Titulo Viral\\\",\\n \\\"type\\\": \\\"Highlight/Noticia\\\",\\n \\\"tags\\\": [\\\"tag1\\\", \\\"tag2\\\"]\\n}' }, { role: 'user', content: 'DADOS:\\nSEO: ' + ($node['Google Suggest'].json[1] ? $node['Google Suggest'].json[1].join(',') : '') + '\\nNot\\u00edcia: ' + ($node['Leitor Trafilatura'].json.texto_materia || $node['Monitora FreshRSS'].json.contentSnippet) + ($(\"Pr\\u00f3ximos Jogos (Free)\").isExecuted && $(\"Pr\\u00f3ximos Jogos (Free)\").first().json.fixtures && $(\"Pr\\u00f3ximos Jogos (Free)\").first().json.fixtures[0] && $(\"Pr\\u00f3ximos Jogos (Free)\").first().json.fixtures[0].status !== 'Not Found - Fallback' ? '\\n\\nDados do Jogo: ' + JSON.stringify($(\"Pr\\u00f3ximos Jogos (Free)\").first().json) : '') }] } }}",
+        "options": {}
+      },
+      "id": "bfd60c50-ce9b-422c-a736-0b0d59f8f8f8",
+      "name": "IA Roteiro Master",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        9248,
+        1152
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n  let content = $input.first().json.message.content;\n  // Remove Markdown wrapper if present\n  content = content.replace(/```json/g, '').replace(/```/g, '').trim();\n  // Find first { and last }\n  const start = content.indexOf('{');\n  const end = content.lastIndexOf('}');\n  if (start !== -1 && end !== -1) {\n      content = content.substring(start, end + 1);\n  }\n  \n  const roteiro = JSON.parse(content);\n  \n  // Basic Validation\n  if (!roteiro.roteiro || roteiro.roteiro.length < 50) throw new Error('Roteiro muito curto ou inválido');\n  \n  return { json: roteiro };\n} catch (e) {\n  // Safe Fallback - Avoid accessing specific nodes that might not exist\n  return {\n      json: {\n          roteiro: \"Não foi possível gerar um roteiro detalhado. Assista aos melhores momentos no vídeo.\",\n          titulo: \"Resumo da Partida - Confira os Highlights\",\n          type: \"Highlight\",\n          is_fallback: true,\n          error: e.message\n      }\n  };\n}"
+      },
+      "id": "f5fe7b6d-a7af-4676-8798-268ea4d8eafa",
+      "name": "Parse Roteiro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9472,
+        1152
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "ded2d68f-eeee-4a20-a048-337a506b16a8",
+      "name": "Merge Contexto Roteiro",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        8800,
+        1152
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "images",
+        "query": "={{ $json.titulo }}",
+        "additionalParameters": {
+          "count": 10
+        }
+      },
+      "id": "65fd3152-2a27-4c05-a50d-881dc42819a8",
+      "name": "Brave Images",
+      "type": "@brave/n8n-nodes-brave-search.braveSearch",
+      "typeVersion": 1,
+      "position": [
+        9696,
+        96
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "braveSearchApi": {
+          "id": "WhhZ1MynDTqzt2wR",
+          "name": "Brave Search account"
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "query": "={{ $json.titulo }} futebol notícias",
+        "additionalParameters": {
+          "count": 10
+        }
+      },
+      "id": "ed5f0e52-e070-4cdf-b09e-0db76dde811b",
+      "name": "Brave Web",
+      "type": "@brave/n8n-nodes-brave-search.braveSearch",
+      "typeVersion": 1,
+      "position": [
+        9696,
+        480
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "braveSearchApi": {
+          "id": "WhhZ1MynDTqzt2wR",
+          "name": "Brave Search account"
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "news",
+        "query": "={{ $json.titulo }}",
+        "additionalParameters": {
+          "count": 10
+        }
+      },
+      "type": "@brave/n8n-nodes-brave-search.braveSearch",
+      "typeVersion": 1,
+      "position": [
+        9696,
+        864
+      ],
+      "id": "44292827-8573-48d9-8da8-1b163f120758",
+      "name": "Brave News",
+      "credentials": {
+        "braveSearchApi": {
+          "id": "WhhZ1MynDTqzt2wR",
+          "name": "Brave Search account"
+        }
+      },
+      "alwaysOutputData": true,
+      "continueOnFail": true,
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "videos",
+        "query": "={{ $json.titulo }}",
+        "additionalParameters": {
+          "count": 10
+        }
+      },
+      "type": "@brave/n8n-nodes-brave-search.braveSearch",
+      "typeVersion": 1,
+      "position": [
+        9696,
+        1248
+      ],
+      "id": "63009dbd-1571-4cf0-a23c-97fd8c960466",
+      "name": "Brave Videos",
+      "credentials": {
+        "braveSearchApi": {
+          "id": "WhhZ1MynDTqzt2wR",
+          "name": "Brave Search account"
+        }
+      },
+      "alwaysOutputData": true,
+      "continueOnFail": true,
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/images",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{ $env[\"SERPER_API_KEY\"] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { q: $json.titulo, gl: 'br', num: 10 } }}",
+        "options": {}
+      },
+      "id": "d48375a8-95ac-40cf-91c9-09824e417d1d",
+      "name": "Serper.dev (Images)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        9696,
+        1824
+      ],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://free-football-soccer-videos.p.rapidapi.com/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Key",
+              "value": "={{ $env[\"RAPIDAPI_KEY\"] }}"
+            },
+            {
+              "name": "x-rapidapi-host",
+              "value": "free-football-soccer-videos.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0958bd08-968b-41a6-ad04-3825dc9d9028",
+      "name": "Gaveta VIP (Embeds)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        9696,
+        2208
+      ],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "id": "4b4b2c63-57ed-4615-b120-e53a66fd9e87",
+      "name": "Merge Assets",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        10300,
+        1056
+      ],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const all_images = [];\nconst all_videos = [];\nconst all_news = [];\n\n// Agora usa todos os inputs que chegaram no Merge\n$input.all().forEach(item => {\n  const data = item.json || {};\n  \n  // --- SERPER SEARCH (WEB) ---\n  if (data.organic && Array.isArray(data.organic)) {\n      data.organic.forEach(i => {\n          if (i && i.link) all_news.push({ title: i.title, url: i.link });\n      });\n  }\n\n  // --- IA Metadata ---\n  if (data.tags) all_news.push({ tags: data.tags, trending: data.trending_sound });\n\n  // --- GOOGLE/SERPER/GENERIC IMAGES ---\n  // Tavily returns strings, Serper returns objects. We handle both safely.\n  if (data.images && Array.isArray(data.images)) {\n      data.images.forEach(img => {\n          const url = (typeof img === 'object') ? (img.imageUrl || img.originalImageUrl || img.link) : img;\n          if (typeof url === 'string') all_images.push(url);\n      });\n  }\n\n  // --- TAVILY RESULTS (News) ---\n  if (data.results && Array.isArray(data.results) && !data.organic) { \n     data.results.forEach(r => { \n         // Images in results (SearXNG)\n         if (r.img_src) all_images.push(r.img_src);\n         else if (r.url && (r.url.endsWith('.jpg') || r.url.endsWith('.png'))) all_images.push(r.url);\n         \n         // News in results\n         if (r.title && r.url && !r.img_src) all_news.push({ title: r.title, url: r.url });\n     });\n  }\n\n  // --- PEXELS API ---\n  if (data.videos && Array.isArray(data.videos)) {\n    data.videos.forEach(v => {\n        if (v && v.video_files && Array.isArray(v.video_files)) {\n            const hdFiles = v.video_files.filter(f => f && f.width >= 1280);\n            if (hdFiles.length > 0) all_videos.push(hdFiles[0].link);\n            else if (v.video_files.length > 0) all_videos.push(v.video_files[0].link);\n        }\n    });\n  }\n\n  // --- PIXABAY API ---\n  if (data.hits && Array.isArray(data.hits)) {\n    data.hits.forEach(h => {\n        if (h && h.videos ... [truncated]"
+      },
+      "id": "7a5f4186-1919-4912-83c1-f58c9eb3620b",
+      "name": "Agrupador Master Assets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        10144,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $node['Agrupador Master Assets'].json.assets.all_images[0] || 'https://via.placeholder.com/1280x720' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 5
+            }
+          }
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "id": "9f56c3c2-86f5-4d91-a676-3882dd1d2ea0",
+      "name": "Baixa Capa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        10368,
+        1056
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/jobs/",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { title: $node['Parse Roteiro'].json.titulo, script: $node['Parse Roteiro'].json.roteiro, type: ($node['Parse Roteiro'].json.type || 'Highlight'), assets: $node['Agrupador Master Assets'].json.assets, config: { slide1: 'cutout', slide2: (($node['Parse Roteiro'].json.type || 'Highlight') === 'Highlight' ? 'video_4s_zoom' : 'image'), slide3: 'video_4s_zoom' }, source_url: $node['Monitora FreshRSS'].json.link, pub_date: $node['Monitora FreshRSS'].json.isoDate } }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "658b4998-aa40-49e0-8dbd-51211d05ebdb",
+      "name": "Gera Vídeo Híbrido",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "position": [
+        10816,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Monitora FreshRSS\"].json.link }}",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 10
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text",
+              "outputPropertyName": "texto_materia"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        6112,
+        1152
+      ],
+      "id": "a0b279b9-cd1f-4345-bc88-0e8cc18ed76d",
+      "name": "Descobre Link Real"
+    },
+    {
+      "parameters": {
+        "jsCode": "// CORREÇÃO: Alterado de 'Leitor Jina' para '$input' (genérico) e 'Leitor Trafilatura')\nconst entrada = $input.first().json;\n\n// Lógica de Fallback de Texto (CRÍTICO)\n// Se Trafilatura vier vazio ou muito curto (<50 chars), usa o Snippet do RSS\nlet texto_traf = ($node[\"Leitor Trafilatura\"] && $node[\"Leitor Trafilatura\"].json.texto_materia) || \"\";\nif (texto_traf.length < 50) {\n    texto_traf = $node[\"Monitora FreshRSS\"].json.contentSnippet || $node[\"Monitora FreshRSS\"].json.content || \"\";\n}\n\nconst materia = texto_traf;\n\n// 1. Extrai imagens (jpg, png, etc.)\nconst imagemMatches = materia.matchAll(/https?:\\/\\/.*?\\.(jpg|png|jpeg|gif)/ig);\nlet imagens = Array.from(imagemMatches, m => m[0]).slice(0, 5);\n\n// 2. Extrai vídeos (mp4, YouTube links)\nconst videoMatches = materia.matchAll(/https?:\\/\\/.*?\\.(mp4|webm)|youtu\\.be\\/[a-zA-Z0-9_-]+|youtube\\.com\\/watch\\?v=[a-zA-Z0-9_-]+/ig);\nlet videos = Array.from(videoMatches, m => m[0]).slice(0, 3);\n\n// 3. Define imagem principal (Prioridade: Trafilatura > Regex > Placeholder)\nconst imagem_principal =\n  entrada.imagem_principal ||\n  ($node[\"Leitor Trafilatura\"] && $node[\"Leitor Trafilatura\"].json.imagem_principal) ||\n  imagens[0] ||\n  'https://via.placeholder.com/1280x720?text=Sem+Imagem';\n\nreturn { json: { imagens, videos, imagem_principal, texto_materia: materia } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6784,
+        1152
+      ],
+      "id": "6ec12ce6-780e-4bd2-8f4f-4b2982925b18",
+      "name": "Extrai Midias"
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $node[\"Descobre Link Real\"].json.texto_materia;\n\n// Regex para extrair o link real do artigo (Google News usa <a href=\"...\" class=\"...\"> ou meta)\nconst linkMatch = html.match(/<a[^>]*href=\"([^\"]*?)\"[^>]*class=\"[^\"]*?article[^\"]*\"/i) ||\n                  html.match(/<link rel=\"canonical\" href=\"([^\"]*)\"/i) ||\n                  html.match(/window\\.location\\.replace\\(\"([^\"]*)\"\\)/i);\n\nconst linkReal = linkMatch ? linkMatch[1] : $node[\"Monitora FreshRSS\"].json.link; // Fallback para o original se não achar\n\nreturn { json: { link_real: decodeURIComponent(linkReal) } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6336,
+        1152
+      ],
+      "id": "9a0ee166-7a2a-4fdf-a29f-bb95ea528be4",
+      "name": "Extrai Link Real do Google"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/extract/",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { url: $node[\"Monitora FreshRSS\"].json.link } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        6560,
+        1152
+      ],
+      "id": "7741412b-7cbb-4111-81ae-10ee7cb32da4",
+      "name": "Leitor Trafilatura"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{ $env[\"SERPER_API_KEY\"] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { q: $json.titulo, gl: 'br', num: 5 } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        9696,
+        1440
+      ],
+      "id": "56e7fd94-c5af-419b-8590-7483c706244f",
+      "name": "Serper Search",
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.all();\nconst groups = {\n  premier_league: [],\n  la_liga: [],\n  serie_a: [],\n  brasileirao: [],\n  outros: []\n};\n\ninput.forEach(item => {\n  const video = item.json;\n  const competition = (video.competition || '').toLowerCase();\n  \n  if (competition.includes('premier league')) groups.premier_league.push(video);\n  else if (competition.includes('la liga')) groups.la_liga.push(video);\n  else if (competition.includes('serie a')) groups.serie_a.push(video);\n  else if (competition.includes('brasileirão') || competition.includes('brazil')) groups.brasileirao.push(video);\n  else groups.outros.push(video);\n});\n\nreturn { json: groups };"
+      },
+      "id": "e80b5fa2-defb-4cb2-b549-b3fd00de3601",
+      "name": "Filtra Ligas (Telegram)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12384,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "4168f323-96a8-48ba-b172-e28e10af8487",
+      "name": "Envio Telegram Gols",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        12608,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5679/webhook/8805f345-6dd0-4fa4-a231-851ca3fbf0af",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { executionId: $execution.id } }}",
+        "options": {}
+      },
+      "id": "7f4f66ee-4e8e-410f-89c0-8be6dce49872",
+      "name": "Log Execution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        12832,
+        1344
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/media/scorebat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { team1: $node['Monitora FreshRSS'].json.title.split(' x ')[0] || $node['Monitora FreshRSS'].json.title.split(' vs ')[0] || $node['Monitora FreshRSS'].json.title, team2: $node['Monitora FreshRSS'].json.title.split(' x ')[1] || $node['Monitora FreshRSS'].json.title.split(' vs ')[1] || '' } }}",
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "id": "441872ce-fc57-470e-b464-75e51e6a038e",
+      "name": "ScoreBat (Python)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        8576,
+        768
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/media/reddit",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { query: $node['Monitora FreshRSS'].json.title, flair: 'Media' } }}",
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "id": "2c7f1fdc-ed77-4fc5-9c8c-7dcdff3cede7",
+      "name": "Social Scraper (Python)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        8576,
+        1152
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/enrich/transfermarkt",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { query: $node[\"Monitora FreshRSS\"].json.title } }}",
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "id": "a6a92785-5711-458a-bde7-41207f232237",
+      "name": "Transfermarkt (Python)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        8576,
+        1344
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/news",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{ $env[\"SERPER_API_KEY\"] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { q: $json.titulo, gl: 'br', num: 5 } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        9696,
+        672
+      ],
+      "id": "6abd64b5-c0a2-4298-985e-17e0e4f80f49",
+      "name": "Serper News",
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/videos",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{ $env[\"SERPER_API_KEY\"] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { q: $json.titulo + ' melhores momentos', gl: 'br', num: 10 } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        9696,
+        288
+      ],
+      "id": "2c17c09f-20ad-4a24-8612-61e6af29ec61",
+      "name": "Serper Videos",
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"api_key\": $env[\"TAVILY_API_KEY\"],\n  \"query\": $json.titulo,\n  \"search_depth\": \"basic\",\n  \"include_images\": true,\n  \"include_answer\": true,\n  \"max_results\": 5\n} }}",
+        "options": {}
+      },
+      "id": "33c457f4-a89d-4ac0-9e56-b6a12b5384a0",
+      "name": "Tavily AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        9696,
+        864
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "https://api.pexels.com/videos/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.titulo.includes('futebol') ? 'soccer fans stadium' : 'football soccer match' }}"
+            },
+            {
+              "name": "per_page",
+              "value": "5"
+            },
+            {
+              "name": "orientation",
+              "value": "landscape"
+            },
+            {
+              "name": "size",
+              "value": "medium"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env[\"PEXELS_API_KEY\"] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bbe86640-1b28-48af-bb1e-ef406293b4d4",
+      "name": "Pexels API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        9696,
+        1248
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "https://pixabay.com/api/videos/",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env[\"PIXABAY_API_KEY\"] }}"
+            },
+            {
+              "name": "q",
+              "value": "football soccer"
+            },
+            {
+              "name": "video_type",
+              "value": "film"
+            },
+            {
+              "name": "per_page",
+              "value": "5"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7ae0abf2-9f46-4b79-b598-4d9a4b1525c6",
+      "name": "Pixabay API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        9696,
+        1632
+      ],
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "http://searxng:8080/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.titulo }}"
+            },
+            {
+              "name": "format",
+              "value": "json"
+            },
+            {
+              "name": "categories",
+              "value": "images"
+            },
+            {
+              "name": "engines",
+              "value": "google_images,bing_images"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Real-IP",
+              "value": "127.0.0.1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "88f867d1-3831-4c5a-940c-64a173235316",
+      "name": "SearXNG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        9696,
+        2016
+      ],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "deb6899c-69ee-46a7-a271-2db52d9ab942",
+      "name": "Definir Prioridade",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        5888,
+        1080
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.floor(Math.random() * (120 - 30 + 1) + 30) }}",
+        "unit": "seconds"
+      },
+      "id": "f69317c7-8a49-4b22-9e77-e7c10a30bd7d",
+      "name": "Espera Randomica",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        10592,
+        1056
+      ],
+      "webhookId": "39b9c82b-7925-40e4-b14c-c193b5a62377"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/publish/multi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "video_path",
+              "value": "={{ $json.video_path }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $node['IA Metadata'].isExecuted ? $node['IA Metadata'].json.title : $node['Parse Roteiro'].json.titulo }}"
+            },
+            {
+              "name": "description",
+              "value": "={{ $node['IA Metadata'].isExecuted ? ($node['IA Metadata'].json.description || $node['Parse Roteiro'].json.hook || 'Vídeo Novo!') : ($node['Parse Roteiro'].json.hook || 'Vídeo Novo!') }}"
+            },
+            {
+              "name": "platforms",
+              "value": "={{ ['youtube', 'tiktok'] }}"
+            },
+            {
+              "name": "privacy",
+              "value": "private"
+            },
+            {
+              "name": "hashtags",
+              "value": "={{ ($node['IA Metadata'].isExecuted && $node['IA Metadata'].json.tags) ? $node['IA Metadata'].json.tags : [] }}"
+            },
+            {
+              "name": "job_id",
+              "value": "={{ $node['Gera Vídeo Híbrido'].json.job_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "d224a63e-8a50-43c3-a4f4-8894301aceaf",
+      "name": "Publica Multi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        12384,
+        960
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'http://python_service:8000/jobs/' + $node['Gera Vídeo Híbrido'].json.job_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const results = $json.results || {}; const youtubeOk = results.youtube?.status === 'success'; const tiktokOk = results.tiktok?.status === 'success'; const published = youtubeOk || tiktokOk; return { status: published ? 'published' : 'failed', published, metadata_post: results, error_message: published ? null : 'Falha em todas as plataformas de publicação' }; })() }}",
+        "options": {}
+      },
+      "id": "d01b1722-b7e6-42ff-8c57-bd5aa10e905c",
+      "name": "Update DB Final",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        13056,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/ai/metadata",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { content: ($json.titulo || $node['Monitora FreshRSS'].json.title || 'Sem Titulo') } }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "bc1f3493-a8b0-454c-bfd0-95c4c3ef9f40",
+      "name": "IA Metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "position": [
+        9696,
+        1056
+      ],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.floor(Math.random() * 10) + 5 }}",
+        "unit": "seconds"
+      },
+      "id": "fa45bb80-ae22-47c5-ab60-eb119a05957c",
+      "name": "Delay Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        7008,
+        1152
+      ],
+      "webhookId": "c3c6ac66-121d-4304-8aca-cc83ff962ed3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $input.item.error }}",
+              "operation": "isNotEmpty"
+            },
+            {
+              "value1": "={{ $node['Google Suggest'].json }}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "id": "393e0cb9-dfa7-466d-8e1c-1ae1cf01c155",
+      "name": "IF Erro Suggest",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        7456,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const title = ($input.item.json && $input.item.json.title) ? $input.item.json.title : 'Assunto Viral';\nreturn [\n  {\n    json: {\n      title: title,\n      suggestions: ['futebol brasil', 'noticias virais', title + ' gols']\n    }\n  }\n];"
+      },
+      "id": "34918d0b-b37c-4a6e-8710-0a0e74175079",
+      "name": "Mock Suggestions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7680,
+        1080
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "f679fd03-8b53-4766-ad95-619034fd0b7a",
+      "name": "Wait for Job",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        11040,
+        1056
+      ],
+      "webhookId": "63d47d43-de57-474f-9bda-b83e8c554c72"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'http://python_service:8000/jobs/' + $node['Gera Vídeo Híbrido'].json.job_id }}",
+        "options": {}
+      },
+      "id": "b661eeb2-44ea-4ab5-a369-8f03357f55bf",
+      "name": "Check Job Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        11264,
+        984
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "notEqual",
+              "value2": "processing"
+            }
+          ],
+          "number": [
+            {
+              "value1": "={{ $json.attempts || 0 }}",
+              "operation": "largerEqual",
+              "value2": 20
+            }
+          ]
+        }
+      },
+      "id": "80d5985c-1ec6-42af-b226-bec385a3dccd",
+      "name": "Job Finished?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        11712,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const previousAttempts = Number($node['Wait for Job']?.json?.attempts || 0);\nconst attempts = previousAttempts + 1;\nreturn { json: { ...$json, attempts } };"
+      },
+      "id": "a9839fd4-5f40-4f5a-af53-bc30daaf0be4",
+      "name": "Increment Attempts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11488,
+        984
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.attempts >= 20 && $json.status === 'processing' }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "c1451bed-b5db-4076-a455-bdb3c133d6b9",
+      "name": "Is Timeout?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        11936,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'http://python_service:8000/jobs/' + $node['Gera Vídeo Híbrido'].json.job_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { status: 'timeout', error_message: 'Job timed out in n8n (20 attempts)', updated_at: new Date().toISOString() } }}",
+        "options": {}
+      },
+      "id": "2b1a4057-24dc-4d37-a624-d5e756f2e5ff",
+      "name": "Mark Timeout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        12160,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "value2": "completed|published",
+              "operation": "regex"
+            }
+          ]
+        }
+      },
+      "id": "c6d2552a-6cce-4712-8a58-7a59b5dd32cc",
+      "name": "Job Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        12160,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'http://python_service:8000/jobs/' + $node['Gera Vídeo Híbrido'].json.job_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { status: ($json.status || 'failed'), published: false, error_message: $json.error_message || 'Job finalizado sem status completed; publicação bloqueada no workflow.' } }}",
+        "options": {}
+      },
+      "id": "5ccc4484-25e0-478e-8e54-97f7ac66b84b",
+      "name": "Mark Job Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        12384,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ ($json.results && $json.results.tiktok && $json.results.tiktok.status === 'error') || $json.platforms.includes('manual') }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "1f4cb00f-fd27-4ff2-acf1-baaab5f5b246",
+      "name": "If TikTok Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        12608,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "?? **Falha no Auto-Post (ou Manual Required)** ??\n\n?? **Título:** {{ $node['IA Metadata'].isExecuted ? $node['IA Metadata'].json.title : $node['Parse Roteiro'].json.titulo }}\n??? **Hashtags:** {{ ($node['IA Metadata'].isExecuted && $node['IA Metadata'].json.tags ? $node['IA Metadata'].json.tags : []).join(' ') }}\n?? **Vídeo:** `{{ $json.video_path }}`\n\n?? *O TikTok retornou erro ou o envio foi marcado como manual.*\n?? [Clique para Postar Manualmente](https://www.tiktok.com/upload?lang=pt-BR)"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30
+        }
+      },
+      "id": "7b26c284-cbf1-4ad4-aa21-e72d084f83d9",
+      "name": "Notifica Telegram Manual Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        12832,
+        960
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const all_suggestions = new Set();\nlet original_title = '';\nlet original_data = {};\n\n// Tenta pegar o tÃ­tulo original do Monitora FreshRSS (Mais seguro que input direto)\ntry {\n    if ($('Monitora FreshRSS').first()) {\n        original_title = $('Monitora FreshRSS').first().json.title;\n        original_data = $('Monitora FreshRSS').first().json;\n    }\n} catch(e) {}\n\n// Iterate over all inputs from Google, Brave, Mock\n$input.all().forEach(item => {\n    const json = item.json;\n    if (!json) return;\n    \n    // Tenta pegar title do input se falhar em cima\n    if (!original_title && json.title) original_title = json.title;\n\n    // Format 1: OpenSearch (Google/Brave)\n    if (Array.isArray(json) && json.length > 1 && Array.isArray(json[1])) {\n        json[1].forEach(s => all_suggestions.add(s));\n    }\n    \n    // Format 2: JSON Object with '1'\n    if (json['1'] && Array.isArray(json['1'])) {\n        json['1'].forEach(s => all_suggestions.add(s));\n    }\n    \n    // Format 3: Explicit suggestions key\n    if (json.suggestions && Array.isArray(json.suggestions)) {\n        json.suggestions.forEach(s => all_suggestions.add(s));\n    }\n});\n\nreturn {\n    json: {\n        ...original_data,\n        title: original_title,\n        suggestions: Array.from(all_suggestions)\n    }\n};"
+      },
+      "id": "ec3af311-c14e-4a0b-9dae-21e78bf43f1e",
+      "name": "Merge Suggest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7904,
+        1152
+      ],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "e8f757bb-d83a-4213-b43d-4d2b94b364a7",
+      "name": "Force Merge Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        9024,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        }
+      },
+      "id": "d3f79174-dedd-4f1d-8508-2e845d74e49d",
+      "name": "Cron (10min)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        4544,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://freshrss/i/?a=rss&user=dudu524&token=n8n2026&hours=24",
+        "options": {}
+      },
+      "id": "8bdf1b01-35d7-44e4-bc40-0ceb578aac84",
+      "name": "Monitora FreshRSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        4768,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "titulo",
+              "value": "={{ $json.titulo }}"
+            },
+            {
+              "name": "roteiro",
+              "value": "={{ $json.roteiro }}"
+            },
+            {
+              "name": "type",
+              "value": "={{ $json.type }}"
+            },
+            {
+              "name": "tags",
+              "value": "={{ $json.tags }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a93c0618-0a29-4ec2-9201-aa78532c0d2b",
+      "name": "Broadcast Hub",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        9672,
+        1152
+      ],
+      "alwaysOutputData": true
+    }
+  ],
+  "connections": {
+    "É Novo?": {
+      "main": [
+        [
+          {
+            "node": "IA Triagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA Triagem": {
+      "main": [
+        [
+          {
+            "node": "Parse Triagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Triagem": {
+      "main": [
+        [
+          {
+            "node": "Vale Vídeo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vale Vídeo?": {
+      "main": [
+        [
+          {
+            "node": "Definir Prioridade",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Google Suggest": {
+      "main": [
+        [
+          {
+            "node": "IF Erro Suggest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TheSportsDB": {
+      "main": [
+        [
+          {
+            "node": "Merge Contexto Roteiro",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "IA Roteiro Master": {
+      "main": [
+        [
+          {
+            "node": "Parse Roteiro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Roteiro": {
+      "main": [
+        [
+          {
+            "node": "Broadcast Hub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Contexto Roteiro": {
+      "main": [
+        [
+          {
+            "node": "Force Merge Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brave Images": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Brave Suggestions": {
+      "main": [
+        [
+          {
+            "node": "Merge Suggest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brave Web": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Serper.dev (Images)": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Brave News": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Brave Videos": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Gaveta VIP (Embeds)": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Assets": {
+      "main": [
+        [
+          {
+            "node": "Agrupador Master Assets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agrupador Master Assets": {
+      "main": [
+        [
+          {
+            "node": "Baixa Capa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixa Capa": {
+      "main": [
+        [
+          {
+            "node": "Espera Randomica",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gera Vídeo Híbrido": {
+      "main": [
+        [
+          {
+            "node": "Wait for Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monitora FreshRSS": {
+      "main": [
+        [
+          {
+            "node": "É Novo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrai Midias": {
+      "main": [
+        [
+          {
+            "node": "Delay Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrai Link Real do Google": {
+      "main": [
+        [
+          {
+            "node": "Leitor Trafilatura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leitor Trafilatura": {
+      "main": [
+        [
+          {
+            "node": "Extrai Midias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper Search": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Filtra Ligas (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Envio Telegram Gols",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envio Telegram Gols": {
+      "main": [
+        [
+          {
+            "node": "Log Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ScoreBat (Python)": {
+      "main": [
+        [
+          {
+            "node": "Merge Contexto Roteiro",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Social Scraper (Python)": {
+      "main": [
+        [
+          {
+            "node": "Merge Contexto Roteiro",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Transfermarkt (Python)": {
+      "main": [
+        [
+          {
+            "node": "Merge Contexto Roteiro",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Serper News": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Serper Videos": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Tavily AI": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Pexels API": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Pixabay API": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "SearXNG": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Definir Prioridade": {
+      "main": [
+        [
+          {
+            "node": "Descobre Link Real",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Espera Randomica": {
+      "main": [
+        [
+          {
+            "node": "Gera Vídeo Híbrido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publica Multi": {
+      "main": [
+        [
+          {
+            "node": "If TikTok Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA Metadata": {
+      "main": [
+        [
+          {
+            "node": "Merge Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Delay Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Google Suggest",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Brave Suggestions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Erro Suggest": {
+      "main": [
+        [
+          {
+            "node": "Mock Suggestions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Suggest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Suggestions": {
+      "main": [
+        [
+          {
+            "node": "Merge Suggest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Job": {
+      "main": [
+        [
+          {
+            "node": "Check Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Job Status": {
+      "main": [
+        [
+          {
+            "node": "Increment Attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Finished?": {
+      "main": [
+        [
+          {
+            "node": "Is Timeout?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait for Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Attempts": {
+      "main": [
+        [
+          {
+            "node": "Job Finished?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Timeout?": {
+      "main": [
+        [
+          {
+            "node": "Mark Timeout",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Job Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Publica Multi",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Job Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If TikTok Error": {
+      "main": [
+        [
+          {
+            "node": "Notifica Telegram Manual Post",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update DB Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notifica Telegram Manual Post": {
+      "main": [
+        [
+          {
+            "node": "Update DB Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Suggest": {
+      "main": [
+        [
+          {
+            "node": "ScoreBat (Python)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "TheSportsDB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Social Scraper (Python)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Transfermarkt (Python)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Force Merge Context": {
+      "main": [
+        [
+          {
+            "node": "IA Roteiro Master",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cron (10min)": {
+      "main": [
+        [
+          {
+            "node": "Monitora FreshRSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Broadcast Hub": {
+      "main": [
+        [
+          {
+            "node": "Serper Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Brave Images",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Brave Web",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Brave News",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Brave Videos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Serper.dev (Images)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gaveta VIP (Embeds)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Serper News",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Serper Videos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Tavily AI",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pexels API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pixabay API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SearXNG",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IA Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descobre Link Real": {
+      "main": [
+        [
+          {
+            "node": "Extrai Link Real do Google",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Timeout": {
+      "main": [
+        [
+          {
+            "node": "Filtra Ligas (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "3812d373830822120641f24942341cb1c44f224eadbf0c02c4eadaa9c57e8918"
+  }
+}

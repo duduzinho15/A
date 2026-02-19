@@ -64,10 +64,15 @@ async def call_ollama(prompt: str, system: str = "") -> Optional[str]:
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(url, json=payload)
             if resp.status_code == 200:
+                print(f"[AI] Ollama Success: {len(resp.json().get('response', ''))} chars")
                 return resp.json().get("response", "")
             print(f"[AI] Ollama Error: {resp.status_code} - {resp.text}")
+    except httpx.ConnectError:
+        print(f"[AI] Ollama Connection Refused (Is Ollama running at {settings.OLLAMA_URL}?)")
     except Exception as e:
+        import traceback
         print(f"[AI] Ollama Exception: {e}")
+        traceback.print_exc()
     return None
 
 async def call_gemini(prompt: str, system: str = "") -> Optional[str]:
@@ -252,8 +257,12 @@ async def generate_script(req: AIRequest):
         '{"title": "Texto com Hook", "blocks": [{"text": "fala", "type": "speech"}], '
         '"thumbnail_text": "Texto Capa", "image_prompt": "Prompt Imagem", '
         '"hook": "Frase inicial <3s", "cta": "Chamada para ação"}. '
-        "IMPORTANTE: O roteiro DEVE ter no mínimo 60-80 palavras para garantir >25s de vídeo. "
-        "Divida em 3 blocos: Hook (Reação), Desenvolvimento (Contexto), Conclusão (CTA)."
+        "IMPORTANTE: O roteiro DEVE ter no mínimo 80-100 palavras para garantir 30-45s de vídeo. "
+        "Divida em 3 blocos: "
+        "1. Hook (Reação/Curiosidade) - 5s. "
+        "2. Desenvolvimento (Contexto + Resposta da Manchete) - 20-30s. "
+        "3. Conclusão (CTA + Gancho final) - 5-10s. "
+        "NÃO termine o vídeo sem entregar a informação prometida no Hook."
     )
     prompt = f"Gere roteiro sobre: {req.content}"
 
@@ -284,6 +293,8 @@ async def generate_script(req: AIRequest):
         "image_prompt": data.get("image_prompt", "Imagem de futebol"),
         "hook": data.get("hook", "Olha isso!"),
         "cta": data.get("cta", "Comenta aí!"),
+        "search_terms": data.get("search_terms", ["soccer match", "football stadium"]),
+        "mood": data.get("mood", "Rock"),
         "metadata": {"provider": "ai-service"}
     }
 
@@ -302,10 +313,10 @@ async def generate_metadata(req: AIRequest):
         '"description": "Comece com Hook de curiosidade. Inclua CTA \'Siga para mais\'. Use 8-10 hashtags fortes.", '
         '"tags": ["#PremierLeague", "#Futebol", "#Viral", "#Transferencias", "#Shorts"], "trending_sound": "Nome de som em alta"}. '
         "REGRAS DE OURO PARA O TÍTULO: "
-        "1. Use Palavras de Poder: URGENTE, BOMBA, CHOCANTE, CONFIRMADO, ADEUS, INCRÍVEL. "
-        "2. Crie Curiosidade: 'O que aconteceu??', 'Ninguém esperava por essa...', 'A verdade sobre...'. "
-        "3. Se for Premier League, mencione 'Premier League' e '2025'. "
-        "4. NUNCA faça títulos informativos chatos. "
+        "1. Use Palavras de Poder mas mantenha LINGUAGEM NATURAL (como um fã falaria). "
+        "2. Evite traduções literais (ex: 'Leva para casa' -> 'Venceu/Conquistou'). "
+        "3. Se for notícia de jogo, coloque o placar ou o fato principal. "
+        "4. Crie curiosidade sem mentir (entregue o valor). "
         f"CONTEXTO: {trends_str}"
     )
     prompt = f"Gere metadata IMPOSSÍVEL DE IGNORAR para: {req.content}"

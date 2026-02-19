@@ -1,12 +1,53 @@
 # Changelog
 
-## 2026-02-15
+## 2026-02-16
+
+### 🔄 Padronização Workflow V8 (IA + Automação)
+
+- **Mudança**: Adotado `workflow_producao_v8.json` como versão oficial de produção (substituindo v6/v7).
+- **Correção**: Script `fix_connections_v8.py` executado para garantir conexões de `ScoreBat`, `Social Scraper`, `Transfermarkt` e `TheSportsDB` ao `Merge Contexto Roteiro`.
+- **Documentação**: Atualizados `README.md` e `estrutura.md` com referências ao v8.
+
+### 🔄 Reforço no Merge Contexto Roteiro (Evita Skips em Paralelos)
+
+- **Problema**: n8n processa left-to-right/top-to-bottom → branches paralelos com sub-cadeias seriais (ex: Próximos Jogos → Odds → Agente) quebram se primeiro vazio.
+- **Correção**: Mode = Append + Always Output Data = true + nó Set "Force Merge Context" após Merge para juntar dados parciais.
+- **Teste**: Merge sempre passa output, IA Roteiro Master executa mesmo com dados incompletos.
+
+### 🔄 Substituição Trigger RSS (Fix Confiabilidade)
+
+- **Problema**: Trigger nativo `Monitora FreshRSS` travava em "Waiting for event" e ignorava feeds existentes.
+- **Correção**: Substituído por `Cron (10min)` + `Read RSS Feed` (Action) + Lógica `É Novo?` corrigida para `isNotEmpty`.
+- **Benefício**: Execução garantida a cada 10 minutos, sem depender de "push" do RSS.
 
 ### 🔄 Fix Loop Infinito e Nós Não Executados (v6 Timeout)
 
 - Causa: Nós paralelos de assets (Brave, Serper, etc.) não conectados ao fluxo principal → Agrupador vazio → Gera Vídeo Híbrido falha → polling sem job_id.
+
 - Correção: Conexões de "Definir Prioridade" → todos os paralelos → Agrupador. Adicionado continueOnFail: true em APIs externas.
 - Teste: Workflow manual executado, assets coletados, job criado, polling termina em <10min.
+
+### 🔄 Fix Execução Paralela (Merge Assets)
+
+- **Problema**: Nós paralelos de assets (Brave, Serper, etc.) não executavam ou Merge Assets travava esperando "todos".
+- **Causa**: Falta de `alwaysOutputData: true` nos nós paralelos, fazendo com que falhas ou skips impedissem o Merge de completar a contagem de inputs.
+- **Correção**: Script `fix_parallel_execution_v8.py` aplicou `alwaysOutputData: true` e `continueOnFail: true` em TODOS os nós de assets.
+- **Reinforce**: `Merge Assets` garantido como `mode: append` e `alwaysOutputData: true`.
+- **Arquitetura**: Adicionado nó `Broadcast Hub` (Set) entre `Parse Roteiro` e paralelos para forçar distribuição de fluxo (fix race condition).
+- **Index Standardization**: `Merge Assets` inputs movidos para `Index 1` (Input 2) para espelhar o comportamento funcional do `Merge Contexto Roteiro`. Expressões atualizadas para usar `$json` (limpo) ao invés de buscar nó avô.
+- **Publish Timeout**: Aumentado timeout do nó `Publica Multi` para 15 minutos (evitar erro de "Falha em todas as plataformas" em uploads lentos). Lógica de sucesso atualizada para aceitar status `published`.
+
+### 🎥 Video Engine V2 (Profissionalização)
+
+- **Audio Ducking**: Implementado mixagem de áudio com redução de volume da música de fundo (12%) durante a fala (TTS). Fim do áudio com Fade-out suave.
+- **Branding & Safe Zone**:
+  - Overlay de **Marca D'água** (logo/watermark.png) no canto superior direito.
+  - Legendas renderizadas com **Fonte Customizada** (se presente em `assets/fonts`) e posicionadas na **Safe Zone** (bottom 250px) para não conflitar com UI do TikTok.
+- **Smart Fallback**:
+  - Se o download de imagens falhar, o sistema usa agora um **Loop Padrão** (`assets/defaults/loop.mp4`) ou ColorClip, evitando tela preta e erro de renderização.
+- **AI & Script**:
+  - Prompt de IA ajustado para garantir roteiros de **30s-45s** (min 80 palavras) e títulos virais sem clickbait falso.
+  - Normalização de texto no Audio Service para corrigir pronúncias (ex: "Novorizontino", "Conquista").
 
 ### 🛠️ Correção do Nó Log Execution (Webhook URL)
 
@@ -128,10 +169,6 @@
   - **Filtro de Notícias**: Jobs com `pub_date` > 48h são rejeitados automaticamente.
   - **Duração Mínima**: Prompt de roteiro exige >80 palavras; Aviso no log se áudio < 25s.
   - **Visibilidade**: Default de `publish.py` alterado para `public`.
-
-### 📦 Dependências
-
-- Adicionados: `unrealspeech`, `kokoro-onnx`, `soundfile`, `huggingface-hub`, `faster-whisper`.
 
 ## 2026-02-11
 

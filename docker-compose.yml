@@ -59,7 +59,6 @@ services:
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - N8N_RESTRICT_FILE_ACCESS_TO=/data_midia
       - N8N_LOG_LEVEL=debug
-      - N8N_LOG_LEVEL=debug
       - N8N_DIAGNOSTICS_ENABLED=true
 
       # Telegram Notification
@@ -96,7 +95,7 @@ services:
     environment:
       # ffmpeg is installed via apt as /usr/bin/ffmpeg in the CUDA runtime image.
       - IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg
-      - NVIDIA_VISIBLE_DEVICES=all
+      - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
@@ -150,10 +149,14 @@ services:
     image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
+    ports:
+      - "11434:11434"
     volumes:
       - ./data/ollama:/root/.ollama
     environment:
       - TZ=America/Sao_Paulo
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=24h
 
   kokoro:
     image: ghcr.io/remsky/kokoro-fastapi-cpu:latest

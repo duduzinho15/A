@@ -3,7 +3,8 @@
 ## Raiz
 
 - `docker-compose.yml`: orquestracao dos containers (freshrss, rss-bridge, n8n, python_service, postgres, flaresolverr, ollama, kokoro, dozzle, searxng).
-- `workflow_producao_v6_timeout.json`: workflow principal de producao (com loop breaker e timeout).
+- `openhands`: Agente CODE (OpenHands) rodando como container satélite (porta 3000).
+- `workflow_producao_v9.json`: workflow principal de producao (IA + Automação).
 - `python_service/`: backend FastAPI e motor de processamento.
 - `n8n_custom/`: workflows auxiliares/customizados.
 - `Docs/`: documentacao operacional e handover.
@@ -12,7 +13,7 @@
 
 ## n8n (Orquestracao)
 
-- Workflow principal: `workflow_producao_v6_timeout.json`.
+- Workflow principal: `workflow_producao_v9.json`.
 - Fluxo principal:
   - Monitora FreshRSS.
   - Faz triagem com IA.
@@ -53,12 +54,15 @@
 - `video_engine.py`: geracao de video em background.
 - `subtitles.py`: geracao de legendas.
 - `youtube.py`: upload no YouTube.
+- `google_news.py`: decodificador de URLs do Google News (RPC + Playwright).
+- `playwright_decoder.py`: serviço headless para resolução de redirects complexos.
 
 ### Utilitarios (`python_service/app/utils`)
 
 - `database.py`: conexao e inicializacao do Postgres.
 - `errors.py`: erros padronizados da API.
 - `assets.py`: bootstrap/download de assets.
+- `flaresolverr.py`: cliente para bypass de Cloudflare via FlareSolverr.
 
 ## TikTok Uploader (estado atual)
 

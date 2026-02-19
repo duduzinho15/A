@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # --- Search / Trends ---
     TAVILY_API_KEY: Optional[str] = None
     SERPER_API_KEY: Optional[str] = None
+    BRAVE_API_KEY: Optional[str] = None
+    GOOGLE_CUSTOM_SEARCH_KEY: Optional[str] = None
+    GOOGLE_CUSTOM_SEARCH_CX: Optional[str] = None
 
     # --- Directories ---
     DATA_MIDIA: str = "/data_midia"

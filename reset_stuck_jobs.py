@@ -20,24 +20,26 @@ def reset_stuck_jobs():
         conn = psycopg2.connect(settings.DATABASE_URL, cursor_factory=RealDictCursor)
         cur = conn.cursor()
         
-        # 1. Find stuck jobs (Pending > 1 hour)
-        # Using raw SQL with interval. Assuming postgres timezone handling matches.
-        query_find = """
-            SELECT id, created_at FROM video_jobs 
-            WHERE status = 'pending' 
-            AND created_at < NOW() - INTERVAL '1 hour'
+        # 1. Find and update stuck jobs (Processing or Pending > 1 hour)
+        query_update = """
+            UPDATE video_jobs 
+            SET status = 'error', 
+                error_message = 'Job marked as stuck (stalled in processing/pending for > 1h)', 
+                updated_at = NOW()
+            WHERE status IN ('processing', 'pending') 
+            AND (
+                (updated_at IS NOT NULL AND updated_at < NOW() - INTERVAL '1 hour')
+                OR 
+                (updated_at IS NULL AND created_at < NOW() - INTERVAL '1 hour')
+            )
+            RETURNING id
         """
-        cur.execute(query_find)
+        cur.execute(query_update)
         rows = cur.fetchall()
         
-        print(f"Found {len(rows)} stuck jobs.")
-        
+        print(f"Updated {len(rows)} stuck jobs to 'error' status.")
         for row in rows:
-            job_id = row['id']
-            print(f"Deleting stuck job: {job_id} (Created: {row['created_at']})")
-            
-            # 2. Delete the job
-            cur.execute("DELETE FROM video_jobs WHERE id = %s", (job_id,))
+            print(f" - Job {row['id']} marked as error.")
             
         conn.commit()
         print("Cleanup complete.")

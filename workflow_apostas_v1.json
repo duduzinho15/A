@@ -1,0 +1,379 @@
+{
+  "name": "Recomendador de Apostas V1",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/ai/analyze",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { content: $node['Monitora FreshRSS'].json.title + ' ' + ($node['Monitora FreshRSS'].json.contentSnippet || ''), context: 'FreshRSS' } }}",
+        "options": {}
+      },
+      "id": "5b116e2b-7312-418b-afc5-3469084477cf",
+      "name": "IA Triagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        5216,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst res = $input.first().json;\nreturn {\n  json: {\n    decisao: {\n      vale_video: res.relevant,\n      motivo: res.reasoning,\n      priority: res.priority || 'low'\n    }\n  }\n};\n"
+      },
+      "id": "c82bc0d2-9ce0-4ccf-89a5-59d7a3659cf4",
+      "name": "Parse Triagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5440,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://suggestqueries.google.com/complete/search?client=firefox&hl=pt&q={{ encodeURIComponent($node[\"Monitora FreshRSS\"].json.title) }}",
+        "options": {
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "id": "27819f8c-2eef-4ad2-964c-44c17f0644e5",
+      "name": "Google Suggest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        7232,
+        1152
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://api.search.brave.com/res/v1/suggest/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $node[\"Monitora FreshRSS\"].json.title }}"
+            },
+            {
+              "name": "count",
+              "value": "10"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Subscription-Token",
+              "value": "={{ $env[\"BRAVE_API_KEY\"] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e30129c9-5561-4648-9588-0096537b0264",
+      "name": "Brave Suggestions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        7232,
+        1344
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Monitora FreshRSS\"].json.link }}",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 10
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text",
+              "outputPropertyName": "texto_materia"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        6112,
+        1152
+      ],
+      "id": "a0b279b9-cd1f-4345-bc88-0e8cc18ed76d",
+      "name": "Descobre Link Real"
+    },
+    {
+      "parameters": {
+        "jsCode": "// CORREÇÃO: Alterado de 'Leitor Jina' para '$input' (genérico) e 'Leitor Trafilatura')\nconst entrada = $input.first().json;\n\n// Lógica de Fallback de Texto (CRÍTICO)\n// Se Trafilatura vier vazio ou muito curto (<50 chars), usa o Snippet do RSS\nlet texto_traf = ($node[\"Leitor Trafilatura\"] && $node[\"Leitor Trafilatura\"].json.texto_materia) || \"\";\nif (texto_traf.length < 50) {\n    texto_traf = $node[\"Monitora FreshRSS\"].json.contentSnippet || $node[\"Monitora FreshRSS\"].json.content || \"\";\n}\n\nconst materia = texto_traf;\n\n// 1. Extrai imagens (jpg, png, etc.)\nconst imagemMatches = materia.matchAll(/https?:\\/\\/.*?\\.(jpg|png|jpeg|gif)/ig);\nlet imagens = Array.from(imagemMatches, m => m[0]).slice(0, 5);\n\n// 2. Extrai vídeos (mp4, YouTube links)\nconst videoMatches = materia.matchAll(/https?:\\/\\/.*?\\.(mp4|webm)|youtu\\.be\\/[a-zA-Z0-9_-]+|youtube\\.com\\/watch\\?v=[a-zA-Z0-9_-]+/ig);\nlet videos = Array.from(videoMatches, m => m[0]).slice(0, 3);\n\n// 3. Define imagem principal (Prioridade: Trafilatura > Regex > Placeholder)\nconst imagem_principal =\n  entrada.imagem_principal ||\n  ($node[\"Leitor Trafilatura\"] && $node[\"Leitor Trafilatura\"].json.imagem_principal) ||\n  imagens[0] ||\n  'https://via.placeholder.com/1280x720?text=Sem+Imagem';\n\nreturn { json: { imagens, videos, imagem_principal, texto_materia: materia } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6784,
+        1152
+      ],
+      "id": "6ec12ce6-780e-4bd2-8f4f-4b2982925b18",
+      "name": "Extrai Midias"
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $node[\"Descobre Link Real\"].json.texto_materia;\n\n// Regex para extrair o link real do artigo (Google News usa <a href=\"...\" class=\"...\"> ou meta)\nconst linkMatch = html.match(/<a[^>]*href=\"([^\"]*?)\"[^>]*class=\"[^\"]*?article[^\"]*\"/i) ||\n                  html.match(/<link rel=\"canonical\" href=\"([^\"]*)\"/i) ||\n                  html.match(/window\\.location\\.replace\\(\"([^\"]*)\"\\)/i);\n\nconst linkReal = linkMatch ? linkMatch[1] : $node[\"Monitora FreshRSS\"].json.link; // Fallback para o original se não achar\n\nreturn { json: { link_real: decodeURIComponent(linkReal) } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6336,
+        1152
+      ],
+      "id": "9a0ee166-7a2a-4fdf-a29f-bb95ea528be4",
+      "name": "Extrai Link Real do Google"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/extract/",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { url: $node[\"Monitora FreshRSS\"].json.link } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        6560,
+        1152
+      ],
+      "id": "7741412b-7cbb-4111-81ae-10ee7cb32da4",
+      "name": "Leitor Trafilatura"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "5dd018d0-7799-4c07-8432-0ec233aed29a",
+      "name": "Envio Telegram Apostas",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        8800,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'llama3.2', format: 'json', stream: false, messages: [{ role: 'system', content: 'Voc\\u00ea \\u00e9 um Handicapper Profissional (Especialista em Apostas). Sua Miss\\u00e3o: Gerar uma an\\u00e1lise pr\\u00e9-jogo completa cruzando 3 pilares:\\n\\n1. Hard Data: Compare desempenho Casa vs Fora. (Use JSON Predictions). Se Odds estiverem vazias, foque na an\\u00e1lise t\\u00e1tica e de momento.\\n\\n2. Soft Data: Not\\u00edcias de les\\u00f5es, crises, poupan\\u00e7a de titulares (Texto da Not\\u00edcia). Fatores psicol\\u00f3gicos.\\n\\n3. Mercado (Bet365 Context): Se houver Odds, analise valor (Odd > 1.40). Se N\\u00c3O houver odds, sugira mercados baseados na l\\u00f3gica do jogo (ex: \"Prov\\u00e1vel Over 2.5 pelas defesas fracas\").\\n\\nMercados a Considerar (Bet365):\\n- Resultado Final (1x2), Dupla Chance, Empate Anula.\\n- Gols: Over/Under 2.5, Ambas Marcam.\\n- Escanteios: Over/Under, Race to X.\\n- Jogadores: Marcador a qualquer momento (se houver dados).\\n- Criar Aposta: Combine Resultado + Gols + Escanteios.\\n\\nSa\\u00edda Obrigat\\u00f3ria (JSON para Telegram):\\n{\\n \"analise_telegram\": \"\\ud83d\\udcca *Raio-X: [Time A] x [Time B]*\\n\\ud83c\\udfc6 *[Campeonato]*\\n\\n\\u2694\\ufe0f *An\\u00e1lise T\\u00e1tica & Estat\\u00edstica:*\\n\\u2022 Mandante: ...\\n\\u2022 Visitante: ...\\n\\u2022 Fator Not\\u00edcia: ...\\n\\n\\ud83c\\udfaf *Veredito do Especialista:*\\n\\ud83d\\udc8e **Aposta de Valor:** [Escolha] (Odd estim: @[Valor])\\n\\ud83d\\udee1\\ufe0f **Seguran\\u00e7a:** [Escolha]\\n\\u26a0\\ufe0f **Alerta:** [Info Cr\\u00edtica]\",\\n \"reasoning\": \"...\"\\n}' }, { role: 'user', content: 'DADOS DO JOGO:' + ($node['Pr\\u00f3ximos Jogos (Free)'].json && $node['Pr\\u00f3ximos Jogos (Free)'].json[0] && $node['Pr\\u00f3ximos Jogos (Free)'].json[0].fixtures && $node['Pr\\u00f3ximos Jogos (Free)'].json[0].fixtures[0] && $node['Pr\\u00f3ximos Jogos (Free)'].json[0].fixtures[0].status !== 'Not Found - Fallback' ? '\\nPredictions: ' + JSON.stringify($node['Pr\\u00f3ximos Jogos (Free)'].json) : '') + '\\n\\nNot\\u00edcias: ' + ($node['Extrai Midias'].json.texto_materia || $node['Monitora FreshRSS'].json.contentSnippet) + '\\\\n\\nOdds: ' + JSON.stringify($node['Odds (Python)'].json) }] } }}",
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "id": "e2bc74d2-0b08-4625-b84e-86f8521e674d",
+      "name": "Agente de Apostas Pro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        8576,
+        960
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python_service:8000/enrich/odds",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { home_team: ($json.next_match ? $json.next_match.home_team : ''), away_team: ($json.next_match ? $json.next_match.away_team : '') } }}",
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "id": "a2670f7b-fd8e-483b-80df-f24bd0a59741",
+      "name": "Odds (Python)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        8352,
+        960
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.floor(Math.random() * 10) + 5 }}",
+        "unit": "seconds"
+      },
+      "id": "fa45bb80-ae22-47c5-ab60-eb119a05957c",
+      "name": "Delay Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        7008,
+        1152
+      ],
+      "webhookId": "c3c6ac66-121d-4304-8aca-cc83ff962ed3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $input.item.error }}",
+              "operation": "isNotEmpty"
+            },
+            {
+              "value1": "={{ $node['Google Suggest'].json }}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "id": "393e0cb9-dfa7-466d-8e1c-1ae1cf01c155",
+      "name": "IF Erro Suggest",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        7456,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const title = ($input.item.json && $input.item.json.title) ? $input.item.json.title : 'Assunto Viral';\nreturn [\n  {\n    json: {\n      title: title,\n      suggestions: ['futebol brasil', 'noticias virais', title + ' gols']\n    }\n  }\n];"
+      },
+      "id": "34918d0b-b37c-4a6e-8710-0a0e74175079",
+      "name": "Mock Suggestions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7680,
+        1080
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const all_suggestions = new Set();\nlet original_title = '';\nlet original_data = {};\n\n// Tenta pegar o tÃ­tulo original do Monitora FreshRSS (Mais seguro que input direto)\ntry {\n    if ($('Monitora FreshRSS').first()) {\n        original_title = $('Monitora FreshRSS').first().json.title;\n        original_data = $('Monitora FreshRSS').first().json;\n    }\n} catch(e) {}\n\n// Iterate over all inputs from Google, Brave, Mock\n$input.all().forEach(item => {\n    const json = item.json;\n    if (!json) return;\n    \n    // Tenta pegar title do input se falhar em cima\n    if (!original_title && json.title) original_title = json.title;\n\n    // Format 1: OpenSearch (Google/Brave)\n    if (Array.isArray(json) && json.length > 1 && Array.isArray(json[1])) {\n        json[1].forEach(s => all_suggestions.add(s));\n    }\n    \n    // Format 2: JSON Object with '1'\n    if (json['1'] && Array.isArray(json['1'])) {\n        json['1'].forEach(s => all_suggestions.add(s));\n    }\n    \n    // Format 3: Explicit suggestions key\n    if (json.suggestions && Array.isArray(json.suggestions)) {\n        json.suggestions.forEach(s => all_suggestions.add(s));\n    }\n});\n\nreturn {\n    json: {\n        ...original_data,\n        title: original_title,\n        suggestions: Array.from(all_suggestions)\n    }\n};"
+      },
+      "id": "ec3af311-c14e-4a0b-9dae-21e78bf43f1e",
+      "name": "Merge Suggest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7904,
+        1152
+      ],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        }
+      },
+      "id": "d3f79174-dedd-4f1d-8508-2e845d74e49d",
+      "name": "Cron (10min)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        4544,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://freshrss/i/?a=rss&user=dudu524&token=n8n2026&hours=24",
+        "options": {}
+      },
+      "id": "8bdf1b01-35d7-44e4-bc40-0ceb578aac84",
+      "name": "Monitora FreshRSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        4768,
+        1152
+      ]
+    }
+  ],
+  "connections": {
+    "IA Triagem": {
+      "main": []
+    },
+    "Parse Triagem": {
+      "main": []
+    },
+    "Google Suggest": {
+      "main": []
+    },
+    "Brave Suggestions": {
+      "main": []
+    },
+    "Monitora FreshRSS": {
+      "main": []
+    },
+    "Extrai Midias": {
+      "main": []
+    },
+    "Extrai Link Real do Google": {
+      "main": []
+    },
+    "Leitor Trafilatura": {
+      "main": []
+    },
+    "Agente de Apostas Pro": {
+      "main": []
+    },
+    "Odds (Python)": {
+      "main": []
+    },
+    "Delay Rate Limit": {
+      "main": []
+    },
+    "IF Erro Suggest": {
+      "main": []
+    },
+    "Mock Suggestions": {
+      "main": []
+    },
+    "Merge Suggest": {
+      "main": []
+    },
+    "Cron (10min)": {
+      "main": []
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "3812d373830822120641f24942341cb1c44f224eadbf0c02c4eadaa9c57e8918"
+  }
+}
