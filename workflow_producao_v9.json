@@ -1076,7 +1076,9 @@
     {
       "parameters": {
         "url": "={{ 'http://python_service:8000/jobs/' + $node['Gera Vídeo Híbrido'].json.job_id }}",
-        "options": {}
+        "options": {
+          "timeout": 10000
+        }
       },
       "id": "b661eeb2-44ea-4ab5-a369-8f03357f55bf",
       "name": "Check Job Status",
@@ -2082,17 +2084,6 @@
         [
           {
             "node": "Extrai Link Real do Google",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Mark Timeout": {
-      "main": [
-        [
-          {
-            "node": "Filtra Ligas (Telegram)",
             "type": "main",
             "index": 0
           }
