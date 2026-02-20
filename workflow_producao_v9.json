@@ -1,5 +1,4 @@
 {
-  "name": "Produção V9 - IA + Automação (Vídeo)",
   "nodes": [
     {
       "parameters": {
@@ -12,13 +11,13 @@
           ]
         }
       },
-      "id": "bcfb25c9-9df0-47ff-9fcf-c0da367aa552",
+      "id": "fe986919-fa3b-4d71-87b0-9b3b7b7ff2d8",
       "name": "É Novo?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        4992,
-        1152
+        -4256,
+        9984
       ]
     },
     {
@@ -30,26 +29,26 @@
         "jsonBody": "={{ { content: $node['Monitora FreshRSS'].json.title + ' ' + ($node['Monitora FreshRSS'].json.contentSnippet || ''), context: 'FreshRSS' } }}",
         "options": {}
       },
-      "id": "5b116e2b-7312-418b-afc5-3469084477cf",
+      "id": "d70046cd-7fae-4a5d-b2f1-50851db0ab97",
       "name": "IA Triagem",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        5216,
-        1152
+        -4032,
+        9984
       ]
     },
     {
       "parameters": {
         "jsCode": "\nconst res = $input.first().json;\nreturn {\n  json: {\n    decisao: {\n      vale_video: res.relevant,\n      motivo: res.reasoning,\n      priority: res.priority || 'low'\n    }\n  }\n};\n"
       },
-      "id": "c82bc0d2-9ce0-4ccf-89a5-59d7a3659cf4",
+      "id": "29d89945-8711-48ea-a8f7-00af74e55516",
       "name": "Parse Triagem",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5440,
-        1152
+        -3808,
+        9984
       ]
     },
     {
@@ -63,13 +62,13 @@
           ]
         }
       },
-      "id": "b708d0a2-018f-4804-a529-82119e40ce12",
+      "id": "62dfdc2f-f067-4c48-ac1b-92a325173f0b",
       "name": "Vale Vídeo?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        5664,
-        1152
+        -3584,
+        9984
       ]
     },
     {
@@ -81,13 +80,13 @@
           }
         }
       },
-      "id": "27819f8c-2eef-4ad2-964c-44c17f0644e5",
+      "id": "f413ae5b-3ba0-4074-a249-38c8eda7ba58",
       "name": "Google Suggest",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        7232,
-        1152
+        -2016,
+        9912
       ],
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -122,19 +121,19 @@
         },
         "options": {}
       },
-      "id": "e30129c9-5561-4648-9588-0096537b0264",
+      "id": "64ef357c-ac0b-4406-8729-053e4b76f2b1",
       "name": "Brave Suggestions",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        7232,
-        1344
+        -1568,
+        10128
       ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
-      "continueOnFail": true,
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -146,13 +145,13 @@
         "options": {}
       },
       "alwaysOutputData": true,
-      "id": "a78125c1-7b34-4be4-9ce6-b00daf38e83f",
+      "id": "161caca7-64f7-4018-b2ce-a0f9ef3e3a1b",
       "name": "TheSportsDB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        8576,
-        1536
+        -896,
+        9984
       ],
       "continueOnFail": true
     },
@@ -165,13 +164,13 @@
         "jsonBody": "={{ { model: 'llama3.2', format: 'json', stream: false, messages: [{ role: 'system', content: 'Voc\\u00ea \\u00e9 um Narrador Esportivo YouTuber (Curioso, Energ\\u00e9tico, Pol\\u00eamico). Crie um roteiro de V\\u00cdDEO CURTO (Shorts/Reels) com M\\u00cdNIMO 300 PALAVRAS.\\n\\nESTRUTURA:\\n1. GANCHO (3s)\\n2. CONTEXTO (15s)\\n3. AN\\u00c1LISE (30s)\\n4. CTA (5s)\\n\\nFORMATO JSON OBRIGAT\\u00d3RIO:\\n{\\n \\\"roteiro\\\": \\\"Texto completo do roteiro...\\\",\\n \\\"titulo\\\": \\\"Titulo Viral\\\",\\n \\\"type\\\": \\\"Highlight/Noticia\\\",\\n \\\"tags\\\": [\\\"tag1\\\", \\\"tag2\\\"]\\n}' }, { role: 'user', content: 'DADOS:\\nSEO: ' + ($node['Google Suggest'].json[1] ? $node['Google Suggest'].json[1].join(',') : '') + '\\nNot\\u00edcia: ' + ($node['Leitor Trafilatura'].json.texto_materia || $node['Monitora FreshRSS'].json.contentSnippet) }] } }}",
         "options": {}
       },
-      "id": "bfd60c50-ce9b-422c-a736-0b0d59f8f8f8",
+      "id": "3ee23458-ead8-4f38-b12d-115a607a453b",
       "name": "IA Roteiro Master",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        9248,
-        1152
+        224,
+        9984
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -181,24 +180,24 @@
       "parameters": {
         "jsCode": "try {\n  let content = $input.first().json.message.content;\n  // Remove Markdown wrapper if present\n  content = content.replace(/```json/g, '').replace(/```/g, '').trim();\n  // Find first { and last }\n  const start = content.indexOf('{');\n  const end = content.lastIndexOf('}');\n  if (start !== -1 && end !== -1) {\n      content = content.substring(start, end + 1);\n  }\n  \n  const roteiro = JSON.parse(content);\n  \n  // Basic Validation\n  if (!roteiro.roteiro || roteiro.roteiro.length < 50) throw new Error('Roteiro muito curto ou inválido');\n  \n  return { json: roteiro };\n} catch (e) {\n  // Safe Fallback - Avoid accessing specific nodes that might not exist\n  return {\n      json: {\n          roteiro: \"Não foi possível gerar um roteiro detalhado. Assista aos melhores momentos no vídeo.\",\n          titulo: \"Resumo da Partida - Confira os Highlights\",\n          type: \"Highlight\",\n          is_fallback: true,\n          error: e.message\n      }\n  };\n}"
       },
-      "id": "f5fe7b6d-a7af-4676-8798-268ea4d8eafa",
+      "id": "182d7467-5075-43ab-b95a-688d247d7036",
       "name": "Parse Roteiro",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        9472,
-        1152
+        448,
+        9984
       ]
     },
     {
       "parameters": {},
-      "id": "ded2d68f-eeee-4a20-a048-337a506b16a8",
+      "id": "5eea4cb3-ec17-4b1b-bda0-f4343b282c88",
       "name": "Merge Contexto Roteiro",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 2,
       "position": [
-        8800,
-        1152
+        -224,
+        9984
       ],
       "alwaysOutputData": true
     },
@@ -206,108 +205,100 @@
       "parameters": {
         "operation": "images",
         "query": "={{ $json.titulo }}",
-        "additionalParameters": {
-          "count": 10
-        }
+        "additionalParameters": {}
       },
-      "id": "65fd3152-2a27-4c05-a50d-881dc42819a8",
+      "id": "7349323b-f3ce-4c74-be2a-a55646b78aa8",
       "name": "Brave Images",
       "type": "@brave/n8n-nodes-brave-search.braveSearch",
       "typeVersion": 1,
       "position": [
-        9696,
-        96
+        1120,
+        9984
       ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
       "credentials": {
         "braveSearchApi": {
           "id": "WhhZ1MynDTqzt2wR",
           "name": "Brave Search account"
         }
       },
-      "continueOnFail": true,
-      "alwaysOutputData": true
+      "continueOnFail": true
     },
     {
       "parameters": {
         "query": "={{ $json.titulo }} futebol notícias",
-        "additionalParameters": {
-          "count": 10
-        }
+        "additionalParameters": {}
       },
-      "id": "ed5f0e52-e070-4cdf-b09e-0db76dde811b",
+      "id": "95a1242c-94ef-45b2-ad3f-09d25e6b5274",
       "name": "Brave Web",
       "type": "@brave/n8n-nodes-brave-search.braveSearch",
       "typeVersion": 1,
       "position": [
-        9696,
-        480
+        1344,
+        9984
       ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
       "credentials": {
         "braveSearchApi": {
           "id": "WhhZ1MynDTqzt2wR",
           "name": "Brave Search account"
         }
       },
-      "continueOnFail": true,
-      "alwaysOutputData": true
+      "continueOnFail": true
     },
     {
       "parameters": {
         "operation": "news",
         "query": "={{ $json.titulo }}",
-        "additionalParameters": {
-          "count": 10
-        }
+        "additionalParameters": {}
       },
       "type": "@brave/n8n-nodes-brave-search.braveSearch",
       "typeVersion": 1,
       "position": [
-        9696,
-        864
+        1568,
+        9984
       ],
-      "id": "44292827-8573-48d9-8da8-1b163f120758",
+      "id": "44613562-6d73-494c-8d6a-2b2229f11bdb",
       "name": "Brave News",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
       "credentials": {
         "braveSearchApi": {
           "id": "WhhZ1MynDTqzt2wR",
           "name": "Brave Search account"
         }
       },
-      "alwaysOutputData": true,
-      "continueOnFail": true,
-      "retryOnFail": true
+      "continueOnFail": true
     },
     {
       "parameters": {
         "operation": "videos",
         "query": "={{ $json.titulo }}",
-        "additionalParameters": {
-          "count": 10
-        }
+        "additionalParameters": {}
       },
       "type": "@brave/n8n-nodes-brave-search.braveSearch",
       "typeVersion": 1,
       "position": [
-        9696,
-        1248
+        1792,
+        9984
       ],
-      "id": "63009dbd-1571-4cf0-a23c-97fd8c960466",
+      "id": "e9de9486-6c64-4588-ab9f-a105e8c8253e",
       "name": "Brave Videos",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
       "credentials": {
         "braveSearchApi": {
           "id": "WhhZ1MynDTqzt2wR",
           "name": "Brave Search account"
         }
       },
-      "alwaysOutputData": true,
-      "continueOnFail": true,
-      "retryOnFail": true
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -331,13 +322,13 @@
         "jsonBody": "={{ { q: $json.titulo, gl: 'br', num: 10 } }}",
         "options": {}
       },
-      "id": "d48375a8-95ac-40cf-91c9-09824e417d1d",
+      "id": "93a98f43-ee90-4891-93e2-6a93a2ede3b0",
       "name": "Serper.dev (Images)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        9696,
-        1824
+        2016,
+        9984
       ],
       "alwaysOutputData": true,
       "continueOnFail": true
@@ -360,29 +351,26 @@
         },
         "options": {}
       },
-      "id": "0958bd08-968b-41a6-ad04-3825dc9d9028",
+      "id": "e1c98f1c-1c5d-4c42-bf3d-b66b458e5c84",
       "name": "Gaveta VIP (Embeds)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        9696,
-        2208
+        2240,
+        9984
       ],
       "alwaysOutputData": true,
       "continueOnFail": true
     },
     {
-      "parameters": {
-        "mode": "append",
-        "options": {}
-      },
-      "id": "4b4b2c63-57ed-4615-b120-e53a66fd9e87",
+      "parameters": {},
+      "id": "29fa9885-a98e-447c-b683-07016015512b",
       "name": "Merge Assets",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 2,
       "position": [
-        10300,
-        1056
+        4032,
+        9888
       ],
       "alwaysOutputData": true,
       "continueOnFail": true
@@ -391,13 +379,13 @@
       "parameters": {
         "jsCode": "const all_images = [];\nconst all_videos = [];\nconst all_news = [];\n\nconst nodesToCheck = [\"Serper Search\", \"Brave Images\", \"Brave Web\", \"Brave News\", \"Brave Videos\", \"Serper.dev (Images)\", \"Gaveta VIP (Embeds)\", \"Serper News\", \"Serper Videos\", \"Tavily AI\", \"Pexels API\", \"Pixabay API\", \"SearXNG\", \"IA Metadata\"];\n\nnodesToCheck.forEach(nodeName => {\n    try {\n        const nodeOutput = $(nodeName).first();\n        if (nodeOutput && nodeOutput.json) {\n            const data = nodeOutput.json;\n            \n            // --- SERPER SEARCH (WEB) ---\n            if (data.organic && Array.isArray(data.organic)) {\n                data.organic.forEach(i => {\n                    if (i && i.link) all_news.push({ title: i.title, url: i.link });\n                });\n            }\n\n            // --- IA Metadata ---\n            if (data.tags) all_news.push({ tags: data.tags, trending: data.trending_sound });\n\n            // --- GOOGLE/SERPER/GENERIC IMAGES ---\n            if (data.images && Array.isArray(data.images)) {\n                data.images.forEach(img => {\n                    const url = (typeof img === 'object') ? (img.imageUrl || img.originalImageUrl || img.link) : img;\n                    if (typeof url === 'string') all_images.push(url);\n                });\n            }\n\n            // --- TAVILY RESULTS (News) ---\n            if (data.results && Array.isArray(data.results) && !data.organic) { \n               data.results.forEach(r => { \n                   if (r.img_src) all_images.push(r.img_src);\n                   else if (r.url && (r.url.endsWith('.jpg') || r.url.endsWith('.png'))) all_images.push(r.url);\n                   if (r.title && r.url && !r.img_src) all_news.push({ title: r.title, url: r.url });\n               });\n            }\n\n            // --- PEXELS API ---\n            if (data.videos && Array.isArray(data.videos)) {\n              data.videos.forEach(v => {\n                  if (v && v.video_files && Array.isArray(v.video_files)) {\n                      const hdFiles = v.video_files.filter(f => f && f.width >= 1280);\n                      if (hdFiles.length > 0) all_videos.push(hdFiles[0].link);\n                      else if (v.video_files.length > 0) all_videos.push(v.video_files[0].link);\n                  }\n              });\n            }\n\n            // --- PIXABAY API ---\n            if (data.hits && Array.isArray(data.hits)) {\n              data.hits.forEach(h => {\n                  if (h && h.videos && h.videos.medium && h.videos.medium.url) {\n                      all_videos.push(h.videos.medium.url);\n                  }\n              });\n            }\n\n            // --- BRAVE SEARCH (Images/Videos/News) ---\n            if (data.results && Array.isArray(data.results)) {\n                 data.results.forEach(r => {\n                    if (r) {\n                        if ((r.url && (r.url.endsWith('jpg') || r.url.endsWith('png'))) || r.thumbnail) {\n                            all_images.push(r.url || r.thumbnail);\n                        }\n                        if (r.url && r.title && !r.video) {\n                             all_news.push({ title: r.title, url: r.url });\n                        }\n                        if (r.video || (r.url && r.url.includes('youtube'))) {\n                             if (r.url) all_videos.push(r.url);\n                        }\n                    }\n                 });\n            }\n        }\n    } catch(e) { }\n});\n\n// Remove duplicatas e limpa\nconst unique_images = [...new Set(all_images.filter(Boolean))];\nconst unique_videos = [...new Set(all_videos.filter(Boolean))];\nconst unique_news = [...new Map(all_news.filter(Boolean).map(item => [item.url, item])).values()];\n\nif (unique_images.length === 0) {\n    unique_images.push('https://dummyimage.com/1280x720/000/fff.jpg&text=No+Image+Found');\n}\n\nlet roteiroType = 'unknown';\ntry {\n    const parseNode = $(\"Parse Roteiro\");\n    if (parseNode && parseNode.first()) {\n        roteiroType = parseNode.first().json.type || 'unknown';\n    }\n} catch(e) {}\n\nreturn { \n  json: { \n    assets: { \n      all_images: unique_images, \n      all_videos: unique_videos, \n      all_news: unique_news.slice(0, 10),\n      type: roteiroType\n    } \n  } \n};"
       },
-      "id": "7a5f4186-1919-4912-83c1-f58c9eb3620b",
+      "id": "10d02dd9-0d69-46e1-9f71-3c2cd1fa2acb",
       "name": "Agrupador Master Assets",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        10144,
-        1056
+        4256,
+        9888
       ]
     },
     {
@@ -423,13 +411,13 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 3000,
-      "id": "9f56c3c2-86f5-4d91-a676-3882dd1d2ea0",
+      "id": "7fb615c6-65dd-4956-b1a5-d6b496fb4817",
       "name": "Baixa Capa",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        10368,
-        1056
+        4480,
+        9888
       ],
       "continueOnFail": true
     },
@@ -444,7 +432,7 @@
           "timeout": 300000
         }
       },
-      "id": "658b4998-aa40-49e0-8dbd-51211d05ebdb",
+      "id": "fb6c8eb0-19fb-4aed-8605-43afe7cc05cc",
       "name": "Gera Vídeo Híbrido",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
@@ -452,8 +440,8 @@
       "maxTries": 3,
       "waitBetweenTries": 5000,
       "position": [
-        10816,
-        1056
+        4928,
+        9888
       ]
     },
     {
@@ -478,10 +466,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        6112,
-        1152
+        -3136,
+        9984
       ],
-      "id": "a0b279b9-cd1f-4345-bc88-0e8cc18ed76d",
+      "id": "8ee8e101-0ae1-4112-a3e6-e40bc6804b4c",
       "name": "Descobre Link Real"
     },
     {
@@ -491,10 +479,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6784,
-        1152
+        -2464,
+        9984
       ],
-      "id": "6ec12ce6-780e-4bd2-8f4f-4b2982925b18",
+      "id": "a7cbfcd2-9e44-4d5b-b45b-0dd6d2e472f8",
       "name": "Extrai Midias"
     },
     {
@@ -504,10 +492,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6336,
-        1152
+        -2912,
+        9984
       ],
-      "id": "9a0ee166-7a2a-4fdf-a29f-bb95ea528be4",
+      "id": "3fb3663b-4264-49a6-98a7-1ab1a182b2b2",
       "name": "Extrai Link Real do Google"
     },
     {
@@ -522,10 +510,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        6560,
-        1152
+        -2688,
+        9984
       ],
-      "id": "7741412b-7cbb-4111-81ae-10ee7cb32da4",
+      "id": "7fff6139-4fed-4080-b8fb-1b7c1669569a",
       "name": "Leitor Trafilatura"
     },
     {
@@ -553,38 +541,38 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        9696,
-        1440
+        896,
+        9984
       ],
-      "id": "56e7fd94-c5af-419b-8590-7483c706244f",
+      "id": "b7e10ba2-376c-4825-8459-e1e40a38632e",
       "name": "Serper Search",
-      "continueOnFail": true,
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "continueOnFail": true
     },
     {
       "parameters": {
         "jsCode": "const input = $input.all();\nconst groups = {\n  premier_league: [],\n  la_liga: [],\n  serie_a: [],\n  brasileirao: [],\n  outros: []\n};\n\ninput.forEach(item => {\n  const video = item.json;\n  \n  // Extrai o nome da competição de forma segura, seja texto ou objeto\n  let competitionString = \"\";\n  if (video.competition) {\n      if (typeof video.competition === 'string') {\n          competitionString = video.competition;\n      } else if (video.competition.name) {\n          competitionString = video.competition.name;\n      } else {\n          competitionString = JSON.stringify(video.competition); // Fallback final\n      }\n  }\n  \n  const competition = competitionString.toLowerCase();\n  \n  if (competition.includes('premier league') || competition.includes('england')) groups.premier_league.push(video);\n  else if (competition.includes('la liga') || competition.includes('spain')) groups.la_liga.push(video);\n  else if (competition.includes('serie a') || competition.includes('italy')) groups.serie_a.push(video);\n  else if (competition.includes('brasileirão') || competition.includes('brazil') || competition.includes('brasil')) groups.brasileirao.push(video);\n  else groups.outros.push(video);\n});\n\nreturn { json: groups };"
       },
-      "id": "e80b5fa2-defb-4cb2-b549-b3fd00de3601",
+      "id": "176ce63a-0ee0-43e6-8399-9165c994ad5a",
       "name": "Filtra Ligas (Telegram)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        12384,
-        1344
+        2464,
+        10080
       ]
     },
     {
       "parameters": {
         "options": {}
       },
-      "id": "4168f323-96a8-48ba-b172-e28e10af8487",
+      "id": "7ab0343d-12d3-4ff1-830b-2bf02343969b",
       "name": "Envio Telegram Gols",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
       "position": [
-        12608,
-        1344
+        2688,
+        10080
       ]
     },
     {
@@ -596,13 +584,13 @@
         "jsonBody": "={{ { executionId: $execution.id } }}",
         "options": {}
       },
-      "id": "7f4f66ee-4e8e-410f-89c0-8be6dce49872",
+      "id": "9db59811-91b0-49e1-9e8a-4b4567cec3f6",
       "name": "Log Execution",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        12832,
-        1344
+        2912,
+        10080
       ],
       "continueOnFail": true
     },
@@ -616,13 +604,13 @@
         "options": {}
       },
       "alwaysOutputData": true,
-      "id": "441872ce-fc57-470e-b464-75e51e6a038e",
+      "id": "612235a8-9730-4c6f-9a3a-80bc9da5c5cf",
       "name": "ScoreBat (Python)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        8576,
-        768
+        -1120,
+        9984
       ],
       "continueOnFail": true
     },
@@ -636,13 +624,13 @@
         "options": {}
       },
       "alwaysOutputData": true,
-      "id": "2c7f1fdc-ed77-4fc5-9c8c-7dcdff3cede7",
+      "id": "3c2a7b47-5854-4a05-b4f2-f3545e2fb4fc",
       "name": "Social Scraper (Python)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        8576,
-        1152
+        -672,
+        9984
       ],
       "continueOnFail": true
     },
@@ -656,13 +644,13 @@
         "options": {}
       },
       "alwaysOutputData": true,
-      "id": "a6a92785-5711-458a-bde7-41207f232237",
+      "id": "3c5be522-2857-4420-948a-24e9e82b6368",
       "name": "Transfermarkt (Python)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        8576,
-        1344
+        -448,
+        9984
       ],
       "continueOnFail": true
     },
@@ -691,13 +679,13 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        9696,
-        672
+        2464,
+        9888
       ],
-      "id": "6abd64b5-c0a2-4298-985e-17e0e4f80f49",
+      "id": "d097d9fd-dd3b-4467-a823-0bd111abefa2",
       "name": "Serper News",
-      "continueOnFail": true,
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -724,13 +712,13 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        9696,
-        288
+        2688,
+        9888
       ],
-      "id": "2c17c09f-20ad-4a24-8612-61e6af29ec61",
+      "id": "a345efcf-687f-4f0c-bc9e-e999d6d40f5c",
       "name": "Serper Videos",
-      "continueOnFail": true,
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -741,16 +729,16 @@
         "jsonBody": "={{ {\n  \"api_key\": $env[\"TAVILY_API_KEY\"],\n  \"query\": $json.titulo,\n  \"search_depth\": \"basic\",\n  \"include_images\": true,\n  \"include_answer\": true,\n  \"max_results\": 5\n} }}",
         "options": {}
       },
-      "id": "33c457f4-a89d-4ac0-9e56-b6a12b5384a0",
+      "id": "eb9ad8e4-6025-4ca9-a9c7-cd9f00ed59cc",
       "name": "Tavily AI",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        9696,
-        864
+        2912,
+        9888
       ],
-      "continueOnFail": true,
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -787,16 +775,16 @@
         },
         "options": {}
       },
-      "id": "bbe86640-1b28-48af-bb1e-ef406293b4d4",
+      "id": "7e60d777-6815-4f86-b03b-a6e13c636aeb",
       "name": "Pexels API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        9696,
-        1248
+        3136,
+        9888
       ],
-      "continueOnFail": true,
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -824,16 +812,16 @@
         },
         "options": {}
       },
-      "id": "7ae0abf2-9f46-4b79-b598-4d9a4b1525c6",
+      "id": "92d4858b-7182-4136-b835-e378e94265d7",
       "name": "Pixabay API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        9696,
-        1632
+        3360,
+        9888
       ],
-      "continueOnFail": true,
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -870,13 +858,13 @@
         },
         "options": {}
       },
-      "id": "88f867d1-3831-4c5a-940c-64a173235316",
+      "id": "e34c323f-c350-4c07-8716-42be49f52b3e",
       "name": "SearXNG",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        9696,
-        2016
+        3584,
+        9888
       ],
       "alwaysOutputData": true,
       "continueOnFail": true
@@ -885,13 +873,13 @@
       "parameters": {
         "options": {}
       },
-      "id": "deb6899c-69ee-46a7-a271-2db52d9ab942",
+      "id": "b9309011-8233-45a3-8456-aa9961dfb2b5",
       "name": "Definir Prioridade",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
       "position": [
-        5888,
-        1080
+        -3360,
+        9984
       ]
     },
     {
@@ -899,13 +887,13 @@
         "amount": "={{ Math.floor(Math.random() * (120 - 30 + 1) + 30) }}",
         "unit": "seconds"
       },
-      "id": "f69317c7-8a49-4b22-9e77-e7c10a30bd7d",
+      "id": "edea4963-3f09-44b7-8fa6-74cb30eeef35",
       "name": "Espera Randomica",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
       "position": [
-        10592,
-        1056
+        4704,
+        9888
       ],
       "webhookId": "39b9c82b-7925-40e4-b14c-c193b5a62377"
     },
@@ -950,13 +938,13 @@
           "timeout": 900000
         }
       },
-      "id": "d224a63e-8a50-43c3-a4f4-8894301aceaf",
+      "id": "49ec3f45-82ea-485f-8281-d1e498419eef",
       "name": "Publica Multi",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        12384,
-        960
+        6496,
+        9888
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -972,13 +960,13 @@
         "jsonBody": "={{ (() => { const results = $json.results || {}; const youtubeOk = results.youtube?.status === 'success'; const tiktokOk = results.tiktok?.status === 'success'; const published = youtubeOk || tiktokOk; return { status: published ? 'published' : 'failed', published, metadata_post: results, error_message: published ? null : 'Falha em todas as plataformas de publicação' }; })() }}",
         "options": {}
       },
-      "id": "d01b1722-b7e6-42ff-8c57-bd5aa10e905c",
+      "id": "48bd5794-49bb-4388-ba55-19e341c1812a",
       "name": "Update DB Final",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        13056,
-        960
+        7168,
+        9888
       ]
     },
     {
@@ -992,7 +980,7 @@
           "timeout": 300000
         }
       },
-      "id": "bc1f3493-a8b0-454c-bfd0-95c4c3ef9f40",
+      "id": "79866a8f-b3a8-442a-832c-cfdda32684e9",
       "name": "IA Metadata",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
@@ -1000,8 +988,8 @@
       "maxTries": 3,
       "waitBetweenTries": 5000,
       "position": [
-        9696,
-        1056
+        3808,
+        9888
       ],
       "alwaysOutputData": true,
       "continueOnFail": true
@@ -1011,13 +999,13 @@
         "amount": "={{ Math.floor(Math.random() * 10) + 5 }}",
         "unit": "seconds"
       },
-      "id": "fa45bb80-ae22-47c5-ab60-eb119a05957c",
+      "id": "3303362e-0a14-4411-9354-0e2e522b9406",
       "name": "Delay Rate Limit",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
       "position": [
-        7008,
-        1152
+        -2240,
+        9984
       ],
       "webhookId": "c3c6ac66-121d-4304-8aca-cc83ff962ed3"
     },
@@ -1036,26 +1024,26 @@
           ]
         }
       },
-      "id": "393e0cb9-dfa7-466d-8e1c-1ae1cf01c155",
+      "id": "6991e472-66f1-48f2-a20d-833ac699e42e",
       "name": "IF Erro Suggest",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        7456,
-        1152
+        -1792,
+        9912
       ]
     },
     {
       "parameters": {
         "jsCode": "const title = ($input.item.json && $input.item.json.title) ? $input.item.json.title : 'Assunto Viral';\nreturn [\n  {\n    json: {\n      title: title,\n      suggestions: ['futebol brasil', 'noticias virais', title + ' gols']\n    }\n  }\n];"
       },
-      "id": "34918d0b-b37c-4a6e-8710-0a0e74175079",
+      "id": "9459e306-30d0-45d3-9cd5-3ffabfb36892",
       "name": "Mock Suggestions",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7680,
-        1080
+        -1568,
+        9840
       ]
     },
     {
@@ -1063,13 +1051,13 @@
         "amount": 30,
         "unit": "seconds"
       },
-      "id": "f679fd03-8b53-4766-ad95-619034fd0b7a",
+      "id": "54729947-8ca3-42ac-ae5a-c21ba5a543eb",
       "name": "Wait for Job",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
       "position": [
-        11040,
-        1056
+        5152,
+        9888
       ],
       "webhookId": "63d47d43-de57-474f-9bda-b83e8c554c72"
     },
@@ -1080,13 +1068,13 @@
           "timeout": 10000
         }
       },
-      "id": "b661eeb2-44ea-4ab5-a369-8f03357f55bf",
+      "id": "79536ffa-6474-4bfe-9e40-90538d90a03a",
       "name": "Check Job Status",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        11264,
-        984
+        5376,
+        9816
       ]
     },
     {
@@ -1106,29 +1094,28 @@
               "value2": 20
             }
           ]
-        },
-        "combinator": "any"
+        }
       },
-      "id": "80d5985c-1ec6-42af-b226-bec385a3dccd",
+      "id": "332c9795-2de1-4c2f-87f7-2e9ef4c31ee3",
       "name": "Job Finished?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        11712,
-        1056
+        5824,
+        9888
       ]
     },
     {
       "parameters": {
         "jsCode": "const previousAttempts = Number($node['Wait for Job']?.json?.attempts || 0);\nconst attempts = previousAttempts + 1;\nreturn { json: { ...$json, attempts } };"
       },
-      "id": "a9839fd4-5f40-4f5a-af53-bc30daaf0be4",
+      "id": "90b9d285-005e-4640-9356-31a75f17eeec",
       "name": "Increment Attempts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        11488,
-        984
+        5600,
+        9816
       ]
     },
     {
@@ -1142,13 +1129,13 @@
           ]
         }
       },
-      "id": "c1451bed-b5db-4076-a455-bdb3c133d6b9",
+      "id": "7758f3a6-3ed3-42c6-b73d-22595037c361",
       "name": "Is Timeout?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        11936,
-        1056
+        6048,
+        9888
       ]
     },
     {
@@ -1160,13 +1147,13 @@
         "jsonBody": "={{ { status: 'timeout', error_message: 'Job timed out in n8n (20 attempts)', updated_at: new Date().toISOString() } }}",
         "options": {}
       },
-      "id": "2b1a4057-24dc-4d37-a624-d5e756f2e5ff",
+      "id": "9477ea81-d485-449f-a397-d70785d4f983",
       "name": "Mark Timeout",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        12160,
-        960
+        6272,
+        9792
       ]
     },
     {
@@ -1175,19 +1162,19 @@
           "string": [
             {
               "value1": "={{ $json.status }}",
-              "value2": "completed|published",
-              "operation": "regex"
+              "operation": "regex",
+              "value2": "completed|published"
             }
           ]
         }
       },
-      "id": "c6d2552a-6cce-4712-8a58-7a59b5dd32cc",
+      "id": "deed7099-dbb1-4d6f-bbf3-7ef307da0dc5",
       "name": "Job Succeeded?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        12160,
-        1152
+        6272,
+        9984
       ]
     },
     {
@@ -1199,13 +1186,13 @@
         "jsonBody": "={{ { status: ($json.status || 'failed'), published: false, error_message: $json.error_message || 'Job finalizado sem status completed; publicação bloqueada no workflow.' } }}",
         "options": {}
       },
-      "id": "5ccc4484-25e0-478e-8e54-97f7ac66b84b",
+      "id": "3b281bb8-5d20-4434-8e4e-0dc17134c715",
       "name": "Mark Job Failed",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        12384,
-        1152
+        6496,
+        10080
       ]
     },
     {
@@ -1219,13 +1206,13 @@
           ]
         }
       },
-      "id": "1f4cb00f-fd27-4ff2-acf1-baaab5f5b246",
+      "id": "2ae60b5e-a5b3-4db7-98fd-99591fd63c06",
       "name": "If TikTok Error",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        12608,
-        960
+        6720,
+        9888
       ]
     },
     {
@@ -1246,16 +1233,16 @@
           ]
         },
         "options": {
-          "timeout": 30
+          "timeout": 30000
         }
       },
-      "id": "7b26c284-cbf1-4ad4-aa21-e72d084f83d9",
+      "id": "0cf916bb-5e5e-4dd2-b4fb-4e259d079677",
       "name": "Notifica Telegram Manual Post",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        12832,
-        960
+        6944,
+        9816
       ],
       "continueOnFail": true
     },
@@ -1263,13 +1250,13 @@
       "parameters": {
         "jsCode": "const all_suggestions = new Set();\nlet original_title = '';\nlet original_data = {};\n\n// Tenta pegar o tÃ­tulo original do Monitora FreshRSS (Mais seguro que input direto)\ntry {\n    if ($('Monitora FreshRSS').first()) {\n        original_title = $('Monitora FreshRSS').first().json.title;\n        original_data = $('Monitora FreshRSS').first().json;\n    }\n} catch(e) {}\n\n// Iterate over all inputs from Google, Brave, Mock\n$input.all().forEach(item => {\n    const json = item.json;\n    if (!json) return;\n    \n    // Tenta pegar title do input se falhar em cima\n    if (!original_title && json.title) original_title = json.title;\n\n    // Format 1: OpenSearch (Google/Brave)\n    if (Array.isArray(json) && json.length > 1 && Array.isArray(json[1])) {\n        json[1].forEach(s => all_suggestions.add(s));\n    }\n    \n    // Format 2: JSON Object with '1'\n    if (json['1'] && Array.isArray(json['1'])) {\n        json['1'].forEach(s => all_suggestions.add(s));\n    }\n    \n    // Format 3: Explicit suggestions key\n    if (json.suggestions && Array.isArray(json.suggestions)) {\n        json.suggestions.forEach(s => all_suggestions.add(s));\n    }\n});\n\nreturn {\n    json: {\n        ...original_data,\n        title: original_title,\n        suggestions: Array.from(all_suggestions)\n    }\n};"
       },
-      "id": "ec3af311-c14e-4a0b-9dae-21e78bf43f1e",
+      "id": "a3de9ac6-6a2e-4e1b-b9ad-dd242ba35c2e",
       "name": "Merge Suggest",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7904,
-        1152
+        -1344,
+        9984
       ],
       "alwaysOutputData": true,
       "continueOnFail": true
@@ -1278,13 +1265,13 @@
       "parameters": {
         "options": {}
       },
-      "id": "e8f757bb-d83a-4213-b43d-4d2b94b364a7",
+      "id": "eb00ff20-4966-407f-90cc-08723bcc4160",
       "name": "Force Merge Context",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
       "position": [
-        9024,
-        1152
+        0,
+        9984
       ]
     },
     {
@@ -1297,13 +1284,13 @@
           ]
         }
       },
-      "id": "d3f79174-dedd-4f1d-8508-2e845d74e49d",
+      "id": "5df2553b-30fe-4de9-a42f-775c04179afd",
       "name": "Cron (10min)",
       "type": "n8n-nodes-base.cron",
       "typeVersion": 1,
       "position": [
-        4544,
-        1152
+        -4704,
+        9984
       ]
     },
     {
@@ -1311,13 +1298,13 @@
         "url": "http://freshrss/i/?a=rss&user=dudu524&token=n8n2026&hours=24",
         "options": {}
       },
-      "id": "8bdf1b01-35d7-44e4-bc40-0ceb578aac84",
+      "id": "18e46b08-861f-4459-93c2-8d8e61f2d69b",
       "name": "Monitora FreshRSS",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1,
       "position": [
-        4768,
-        1152
+        -4480,
+        9984
       ]
     },
     {
@@ -1345,13 +1332,13 @@
         },
         "options": {}
       },
-      "id": "a93c0618-0a29-4ec2-9201-aa78532c0d2b",
+      "id": "a67e8de5-10a3-4295-af1a-705659d84890",
       "name": "Broadcast Hub",
       "type": "n8n-nodes-base.set",
       "typeVersion": 1,
       "position": [
-        9672,
-        1152
+        672,
+        9984
       ],
       "alwaysOutputData": true
     }
@@ -1359,6 +1346,13 @@
   "connections": {
     "É Novo?": {
       "main": [
+        [
+          {
+            "node": "IA Triagem",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "IA Triagem",
@@ -1399,7 +1393,13 @@
             "index": 0
           }
         ],
-        []
+        [
+          {
+            "node": "Definir Prioridade",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Google Suggest": {
@@ -1407,6 +1407,17 @@
         [
           {
             "node": "IF Erro Suggest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brave Suggestions": {
+      "main": [
+        [
+          {
+            "node": "Merge Suggest",
             "type": "main",
             "index": 0
           }
@@ -1468,33 +1479,11 @@
         ]
       ]
     },
-    "Brave Suggestions": {
-      "main": [
-        [
-          {
-            "node": "Merge Suggest",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Brave Web": {
       "main": [
         [
           {
             "node": "Brave News",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Serper.dev (Images)": {
-      "main": [
-        [
-          {
-            "node": "Gaveta VIP (Embeds)",
             "type": "main",
             "index": 0
           }
@@ -1517,6 +1506,17 @@
         [
           {
             "node": "Serper.dev (Images)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper.dev (Images)": {
+      "main": [
+        [
+          {
+            "node": "Gaveta VIP (Embeds)",
             "type": "main",
             "index": 0
           }
@@ -1583,11 +1583,11 @@
         ]
       ]
     },
-    "Monitora FreshRSS": {
+    "Descobre Link Real": {
       "main": [
         [
           {
-            "node": "É Novo?",
+            "node": "Extrai Link Real do Google",
             "type": "main",
             "index": 0
           }
@@ -1993,6 +1993,17 @@
         ]
       ]
     },
+    "Monitora FreshRSS": {
+      "main": [
+        [
+          {
+            "node": "É Novo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Broadcast Hub": {
       "main": [
         [
@@ -2003,21 +2014,11 @@
           }
         ]
       ]
-    },
-    "Descobre Link Real": {
-      "main": [
-        [
-          {
-            "node": "Extrai Link Real do Google",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
     }
   },
   "pinData": {},
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "3812d373830822120641f24942341cb1c44f224eadbf0c02c4eadaa9c57e8918"
   }
 }
