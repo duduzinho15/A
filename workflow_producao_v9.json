@@ -389,7 +389,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const all_images = [];\nconst all_videos = [];\nconst all_news = [];\n\n// Agora usa todos os inputs que chegaram no Merge\n$input.all().forEach(item => {\n  const data = item.json || {};\n  \n  // --- SERPER SEARCH (WEB) ---\n  if (data.organic && Array.isArray(data.organic)) {\n      data.organic.forEach(i => {\n          if (i && i.link) all_news.push({ title: i.title, url: i.link });\n      });\n  }\n\n  // --- IA Metadata ---\n  if (data.tags) all_news.push({ tags: data.tags, trending: data.trending_sound });\n\n  // --- GOOGLE/SERPER/GENERIC IMAGES ---\n  // Tavily returns strings, Serper returns objects. We handle both safely.\n  if (data.images && Array.isArray(data.images)) {\n      data.images.forEach(img => {\n          const url = (typeof img === 'object') ? (img.imageUrl || img.originalImageUrl || img.link) : img;\n          if (typeof url === 'string') all_images.push(url);\n      });\n  }\n\n  // --- TAVILY RESULTS (News) ---\n  if (data.results && Array.isArray(data.results) && !data.organic) { \n     data.results.forEach(r => { \n         // Images in results (SearXNG)\n         if (r.img_src) all_images.push(r.img_src);\n         else if (r.url && (r.url.endsWith('.jpg') || r.url.endsWith('.png'))) all_images.push(r.url);\n         \n         // News in results\n         if (r.title && r.url && !r.img_src) all_news.push({ title: r.title, url: r.url });\n     });\n  }\n\n  // --- PEXELS API ---\n  if (data.videos && Array.isArray(data.videos)) {\n    data.videos.forEach(v => {\n        if (v && v.video_files && Array.isArray(v.video_files)) {\n            const hdFiles = v.video_files.filter(f => f && f.width >= 1280);\n            if (hdFiles.length > 0) all_videos.push(hdFiles[0].link);\n            else if (v.video_files.length > 0) all_videos.push(v.video_files[0].link);\n        }\n    });\n  }\n\n  // --- PIXABAY API ---\n  if (data.hits && Array.isArray(data.hits)) {\n    data.hits.forEach(h => {\n        if (h && h.videos && h.videos.medium && h.videos.medium.url) {\n            all_videos.push(h.videos.medium.url);\n        }\n    });\n  }\n\n  // --- BRAVE SEARCH (Images/Videos/News) ---\n  if (data.results && Array.isArray(data.results)) {\n       data.results.forEach(r => {\n          if (r) {\n              // Images\n              if ((r.url && (r.url.endsWith('jpg') || r.url.endsWith('png'))) || r.thumbnail) {\n                  all_images.push(r.url || r.thumbnail);\n              }\n              // News/Web\n              if (r.url && r.title && !r.video) {\n                   all_news.push({ title: r.title, url: r.url });\n              }\n              // Videos (Brave Video Search)\n              if (r.video || (r.url && r.url.includes('youtube'))) {\n                   if (r.url) all_videos.push(r.url);\n              }\n          }\n       });\n  }\n});\n\n// Remove duplicatas e limpa\nconst unique_images = [...new Set(all_images.filter(Boolean))];\nconst unique_videos = [...new Set(all_videos.filter(Boolean))];\nconst unique_news = [...new Map(all_news.filter(Boolean).map(item => [item.url, item])).values()];\n\n// FALLBACK DE SEGURANÃA\nif (unique_images.length === 0) {\n    unique_images.push('https://dummyimage.com/1280x720/000/fff.jpg&text=No+Image+Found');\n}\n\n// Tenta recuperar o tipo do roteiro de alguma forma, ou usa default\nlet roteiroType = 'unknown';\ntry {\n    const parseNode = $(\"Parse Roteiro\");\n    if (parseNode && parseNode.first()) {\n        roteiroType = parseNode.first().json.type || 'unknown';\n    }\n} catch(e) {}\n\nreturn { \n  json: { \n    assets: { \n      all_images: unique_images, \n      all_videos: unique_videos, \n      all_news: unique_news.slice(0, 10),\n      type: roteiroType\n    } \n  } \n};"
+        "jsCode": "const all_images = [];\nconst all_videos = [];\nconst all_news = [];\n\nconst nodesToCheck = [\"Serper Search\", \"Brave Images\", \"Brave Web\", \"Brave News\", \"Brave Videos\", \"Serper.dev (Images)\", \"Gaveta VIP (Embeds)\", \"Serper News\", \"Serper Videos\", \"Tavily AI\", \"Pexels API\", \"Pixabay API\", \"SearXNG\", \"IA Metadata\"];\n\nnodesToCheck.forEach(nodeName => {\n    try {\n        const nodeOutput = $(nodeName).first();\n        if (nodeOutput && nodeOutput.json) {\n            const data = nodeOutput.json;\n            \n            // --- SERPER SEARCH (WEB) ---\n            if (data.organic && Array.isArray(data.organic)) {\n                data.organic.forEach(i => {\n                    if (i && i.link) all_news.push({ title: i.title, url: i.link });\n                });\n            }\n\n            // --- IA Metadata ---\n            if (data.tags) all_news.push({ tags: data.tags, trending: data.trending_sound });\n\n            // --- GOOGLE/SERPER/GENERIC IMAGES ---\n            if (data.images && Array.isArray(data.images)) {\n                data.images.forEach(img => {\n                    const url = (typeof img === 'object') ? (img.imageUrl || img.originalImageUrl || img.link) : img;\n                    if (typeof url === 'string') all_images.push(url);\n                });\n            }\n\n            // --- TAVILY RESULTS (News) ---\n            if (data.results && Array.isArray(data.results) && !data.organic) { \n               data.results.forEach(r => { \n                   if (r.img_src) all_images.push(r.img_src);\n                   else if (r.url && (r.url.endsWith('.jpg') || r.url.endsWith('.png'))) all_images.push(r.url);\n                   if (r.title && r.url && !r.img_src) all_news.push({ title: r.title, url: r.url });\n               });\n            }\n\n            // --- PEXELS API ---\n            if (data.videos && Array.isArray(data.videos)) {\n              data.videos.forEach(v => {\n                  if (v && v.video_files && Array.isArray(v.video_files)) {\n                      const hdFiles = v.video_files.filter(f => f && f.width >= 1280);\n                      if (hdFiles.length > 0) all_videos.push(hdFiles[0].link);\n                      else if (v.video_files.length > 0) all_videos.push(v.video_files[0].link);\n                  }\n              });\n            }\n\n            // --- PIXABAY API ---\n            if (data.hits && Array.isArray(data.hits)) {\n              data.hits.forEach(h => {\n                  if (h && h.videos && h.videos.medium && h.videos.medium.url) {\n                      all_videos.push(h.videos.medium.url);\n                  }\n              });\n            }\n\n            // --- BRAVE SEARCH (Images/Videos/News) ---\n            if (data.results && Array.isArray(data.results)) {\n                 data.results.forEach(r => {\n                    if (r) {\n                        if ((r.url && (r.url.endsWith('jpg') || r.url.endsWith('png'))) || r.thumbnail) {\n                            all_images.push(r.url || r.thumbnail);\n                        }\n                        if (r.url && r.title && !r.video) {\n                             all_news.push({ title: r.title, url: r.url });\n                        }\n                        if (r.video || (r.url && r.url.includes('youtube'))) {\n                             if (r.url) all_videos.push(r.url);\n                        }\n                    }\n                 });\n            }\n        }\n    } catch(e) { }\n});\n\n// Remove duplicatas e limpa\nconst unique_images = [...new Set(all_images.filter(Boolean))];\nconst unique_videos = [...new Set(all_videos.filter(Boolean))];\nconst unique_news = [...new Map(all_news.filter(Boolean).map(item => [item.url, item])).values()];\n\nif (unique_images.length === 0) {\n    unique_images.push('https://dummyimage.com/1280x720/000/fff.jpg&text=No+Image+Found');\n}\n\nlet roteiroType = 'unknown';\ntry {\n    const parseNode = $(\"Parse Roteiro\");\n    if (parseNode && parseNode.first()) {\n        roteiroType = parseNode.first().json.type || 'unknown';\n    }\n} catch(e) {}\n\nreturn { \n  json: { \n    assets: { \n      all_images: unique_images, \n      all_videos: unique_videos, \n      all_news: unique_news.slice(0, 10),\n      type: roteiroType\n    } \n  } \n};"
       },
       "id": "7a5f4186-1919-4912-83c1-f58c9eb3620b",
       "name": "Agrupador Master Assets",
@@ -439,7 +439,7 @@
         "url": "http://python_service:8000/jobs/",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { title: $node['Parse Roteiro'].json.titulo, script: $node['Parse Roteiro'].json.roteiro, type: ($node['Parse Roteiro'].json.type || 'Highlight'), assets: $node['Agrupador Master Assets'].json.assets, config: { slide1: 'cutout', slide2: (($node['Parse Roteiro'].json.type || 'Highlight') === 'Highlight' ? 'video_4s_zoom' : 'image'), slide3: 'video_4s_zoom' }, source_url: $node['Monitora FreshRSS'].json.link, pub_date: $node['Monitora FreshRSS'].json.isoDate } }}",
+        "jsonBody": "={{ { \n  title: $node['Parse Roteiro'].json.titulo || $node['Monitora FreshRSS'].json.title || \"Notícia de Futebol\", \n  script: $node['Parse Roteiro'].json.roteiro || \"Assista aos melhores momentos.\", \n  type: ($node['Parse Roteiro'].json.type || 'Highlight'), \n  assets: $node['Agrupador Master Assets'].json.assets, \n  config: { \n    slide1: 'cutout', \n    slide2: (($node['Parse Roteiro'].json.type || 'Highlight') === 'Highlight' ? 'video_4s_zoom' : 'image'), \n    slide3: 'video_4s_zoom' \n  }, \n  source_url: $node['Monitora FreshRSS'].json.link, \n  pub_date: $node['Monitora FreshRSS'].json.isoDate \n} }}",
         "options": {
           "timeout": 300000
         }
@@ -563,7 +563,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.all();\nconst groups = {\n  premier_league: [],\n  la_liga: [],\n  serie_a: [],\n  brasileirao: [],\n  outros: []\n};\n\ninput.forEach(item => {\n  const video = item.json;\n  const competition = (video.competition || '').toLowerCase();\n  \n  if (competition.includes('premier league')) groups.premier_league.push(video);\n  else if (competition.includes('la liga')) groups.la_liga.push(video);\n  else if (competition.includes('serie a')) groups.serie_a.push(video);\n  else if (competition.includes('brasileirão') || competition.includes('brazil')) groups.brasileirao.push(video);\n  else groups.outros.push(video);\n});\n\nreturn { json: groups };"
+        "jsCode": "const input = $input.all();\nconst groups = {\n  premier_league: [],\n  la_liga: [],\n  serie_a: [],\n  brasileirao: [],\n  outros: []\n};\n\ninput.forEach(item => {\n  const video = item.json;\n  \n  // Extrai o nome da competição de forma segura, seja texto ou objeto\n  let competitionString = \"\";\n  if (video.competition) {\n      if (typeof video.competition === 'string') {\n          competitionString = video.competition;\n      } else if (video.competition.name) {\n          competitionString = video.competition.name;\n      } else {\n          competitionString = JSON.stringify(video.competition); // Fallback final\n      }\n  }\n  \n  const competition = competitionString.toLowerCase();\n  \n  if (competition.includes('premier league') || competition.includes('england')) groups.premier_league.push(video);\n  else if (competition.includes('la liga') || competition.includes('spain')) groups.la_liga.push(video);\n  else if (competition.includes('serie a') || competition.includes('italy')) groups.serie_a.push(video);\n  else if (competition.includes('brasileirão') || competition.includes('brazil') || competition.includes('brasil')) groups.brasileirao.push(video);\n  else groups.outros.push(video);\n});\n\nreturn { json: groups };"
       },
       "id": "e80b5fa2-defb-4cb2-b549-b3fd00de3601",
       "name": "Filtra Ligas (Telegram)",
@@ -1417,9 +1417,9 @@
       "main": [
         [
           {
-            "node": "Merge Contexto Roteiro",
+            "node": "Social Scraper (Python)",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1461,9 +1461,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Brave Web",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1483,9 +1483,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Brave News",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1494,9 +1494,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Gaveta VIP (Embeds)",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1505,9 +1505,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Brave Videos",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1516,9 +1516,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Serper.dev (Images)",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1527,9 +1527,14 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Serper News",
             "type": "main",
-            "index": 1
+            "index": 0
+          },
+          {
+            "node": "Filtra Ligas (Telegram)",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -1626,9 +1631,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Brave Images",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1659,9 +1664,9 @@
       "main": [
         [
           {
-            "node": "Merge Contexto Roteiro",
+            "node": "TheSportsDB",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1670,9 +1675,9 @@
       "main": [
         [
           {
-            "node": "Merge Contexto Roteiro",
+            "node": "Transfermarkt (Python)",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1683,7 +1688,7 @@
           {
             "node": "Merge Contexto Roteiro",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1692,9 +1697,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Serper Videos",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1703,9 +1708,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Tavily AI",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1714,9 +1719,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Pexels API",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1725,9 +1730,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "Pixabay API",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1736,9 +1741,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "SearXNG",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1747,9 +1752,9 @@
       "main": [
         [
           {
-            "node": "Merge Assets",
+            "node": "IA Metadata",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1793,7 +1798,7 @@
           {
             "node": "Merge Assets",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -1962,21 +1967,6 @@
             "node": "ScoreBat (Python)",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "TheSportsDB",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Social Scraper (Python)",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Transfermarkt (Python)",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -2008,71 +1998,6 @@
         [
           {
             "node": "Serper Search",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Brave Images",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Brave Web",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Brave News",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Brave Videos",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Serper.dev (Images)",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Gaveta VIP (Embeds)",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Serper News",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Serper Videos",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Tavily AI",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Pexels API",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Pixabay API",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "SearXNG",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "IA Metadata",
             "type": "main",
             "index": 0
           }
