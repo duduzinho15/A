@@ -5,10 +5,13 @@
 # facilitando o tratamento no n8n (lado cliente).
 # =============================================================================
 
-from fastapi import Request
+from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import json
+import traceback
+import asyncio
+from app.services.openhands_client import openhands_client
 
 
 # ---------------------------------------------------------------------------
@@ -110,15 +113,34 @@ def registrar_handlers(app):
             }
         )
 
+    @app.exception_handler(HTTPException)
+    async def handler_http_exception(request: Request, exc: HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "erro",
+                "codigo": exc.status_code,
+                "mensagem": str(exc.detail),
+                "detalhes": None
+            }
+        )
+
     # Handler genérico — captura qualquer exceção não tratada
     @app.exception_handler(Exception)
     async def handler_generico(request: Request, exc: Exception):
+        tb = traceback.format_exc()
+        
+        # Ideia #1: Auto-Healing - Notifica o OpenHands de forma assíncrona
+        # Opcional: Reativar quando o serviço 'openhands' estiver disponível no compose.
+        # error_task = (...)
+        # asyncio.create_task(openhands_client.send_task(error_task))
+
         return JSONResponse(
             status_code=500,
             content={
                 "status": "erro",
                 "codigo": 500,
-                "mensagem": "Erro interno no serviço Python",
+                "mensagem": "Erro interno no serviço Python (Auto-healing acionado)",
                 "detalhes": str(exc)
             }
         )

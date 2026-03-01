@@ -32,7 +32,7 @@ async def decode_google_news_url(url: str) -> str:
 
         # 2. Request inicial para obter HTML (e tentar resolver via redirect simples/js)
         try:
-            r = requests.get(url, headers=HEADERS, timeout=10, allow_redirects=True)
+            r = requests.get(url, headers=HEADERS, timeout=5, allow_redirects=True)
             if r.status_code != 200:
                 log_debug(f"[Decode] STATUS {r.status_code} no requests inicial")
                 html = ""
@@ -144,7 +144,7 @@ async def decode_google_news_url(url: str) -> str:
                 rpc_headers = HEADERS.copy()
                 rpc_headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8"
                 
-                resp = requests.post(rpc_url, data=rpc_data, headers=rpc_headers, timeout=15)
+                resp = requests.post(rpc_url, data=rpc_data, headers=rpc_headers, timeout=8)
                 
                 if resp.status_code == 200:
                     resp_text = resp.text

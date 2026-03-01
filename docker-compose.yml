@@ -73,6 +73,9 @@ services:
       - PEXELS_API_KEY=${PEXELS_API_KEY}
       - PIXABAY_API_KEY=${PIXABAY_API_KEY}
 
+      # Portabilidade SRE
+      - PYTHON_SERVICE_URL=http://python_service:8000
+
       # Diretórios
       - N8N_USER_FOLDER=/home/node/.n8n
 
@@ -90,6 +93,7 @@ services:
     build: ./python_service
     container_name: python_service
     restart: unless-stopped
+    shm_size: '2gb'
     env_file:
       - .env
     environment:
@@ -107,11 +111,15 @@ services:
       - ./data/midia:/data_midia
       - ./python_service/app:/app/app
       - ./python_service/tests:/app/tests
+      - ./Docs:/Docs
       - ./python_service/auth_youtube.py:/app/auth_youtube.py
+      - ./python_service/auth_sheets.py:/app/auth_sheets.py
       - ./.env:/app/.env
       - ./data/cookies_tiktok.txt:/app/cookies_tiktok.txt
       - ./python_service/client_secret.json:/app/client_secret.json
       - ./python_service/token.json:/app/token.json
+      - ./python_service/token_sheets.json:/app/token_sheets.json
+      - ./dashboard-react/dist:/dashboard-dist:ro
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 30s

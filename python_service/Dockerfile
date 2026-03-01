@@ -66,6 +66,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     imagemagick \
     software-properties-common \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://us-central1-apt.pkg.dev/doc/repo-signing-key.gpg | gpg --dearmor -o /etc/apt/keyrings/antigravity-repo-key.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/antigravity-repo-key.gpg] https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/ antigravity-debian main" | tee /etc/apt/sources.list.d/antigravity.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends antigravity \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js (needed by TikTok signature generator).
@@ -118,34 +123,28 @@ RUN chown -R appuser:appuser /app
 # Diretório para arquivos de mídia (será montado como volume)
 RUN mkdir -p /data_midia && chown appuser:appuser /data_midia
 
-# --- TikTok Auto Uploader (User Request) ---
-# Copia o repo já preparado do builder
-COPY --from=builder /build/tiktok_uploader /app/tiktok_uploader
+# --- Clone & Install TikTokAutoUploader (haziq-exe) ---
+RUN git clone https://github.com/haziq-exe/TikTokAutoUploader.git /app/tiktok_uploader_new
 
+# Instala dependências do TikTokAutoUploader (Python)
+# O TikTokAutoUploader instala o phantomwright como dependência.
 RUN /opt/venv/bin/pip install --no-cache-dir \
-    fake-useragent==1.4.0 \
-    requests-auth-aws-sigv4==0.7 \
-    undetected-chromedriver \
-    pytube
+    tiktokautouploader \
+    phantomwright
 
-# Install Node deps for the signature generator (avoid downloading browsers here;
-# Python Playwright step below installs Chromium into PLAYWRIGHT_BROWSERS_PATH).
-RUN cd /app/tiktok_uploader/tiktok_uploader/tiktok-signature \
-    && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --omit=dev
-
-# Hotfixes for the vendored TikTok uploader (signature/cookies handling).
-COPY overrides/tiktok_uploader/tiktok.py /app/tiktok_uploader/tiktok_uploader/tiktok.py
-
-# Instala dependências de SO e Browsers do Playwright
-# --with-deps instala libs do linux necessárias (requer apt-get update antes)
-# chromium apenas para economizar espaço
+# Instala dependências de SO e Browsers via phantomwright (motor stealth)
 RUN mkdir -p /ms-playwright \
     && apt-get update \
-    && /opt/venv/bin/playwright install --with-deps chromium \
+    && /opt/venv/bin/python3 -m phantomwright_driver install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 
-# Permissões extras para o usuário appuser no diretório do uploader
-RUN chown -R appuser:appuser /app/tiktok_uploader /ms-playwright
+# Instala dependências de Node (se houver no novo repo)
+RUN if [ -f /app/tiktok_uploader_new/package.json ]; then \
+    cd /app/tiktok_uploader_new && npm install; \
+    fi
+
+# Permissões extras para o usuário appuser
+RUN chown -R appuser:appuser /app/tiktok_uploader_new /ms-playwright
 
 USER appuser
 

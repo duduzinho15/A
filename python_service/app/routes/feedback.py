@@ -59,11 +59,49 @@ def fetch_mock_analytics(video_id: str) -> Dict:
         "retention_avg": round(random.uniform(40.0, 90.0), 2)
     }
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
+async def search_social_feedback(query: str) -> Dict[str, str]:
+    """
+    Busca o que as pessoas estão falando sobre o tema em redes sociais.
+    Usa Tavily ou Serper como motor de busca.
+    """
+    social_context = ""
+    try:
+        from app.config import settings
+        import httpx
+        
+        search_query = f"{query} site:bsky.app OR site:x.com OR site:reddit.com"
+        
+        results = []
+        if settings.TAVILY_API_KEY:
+            url = "https://api.tavily.com/search"
+            payload = {
+                "api_key": settings.TAVILY_API_KEY,
+                "query": search_query,
+                "search_depth": "basic",
+                "max_results": 3
+            }
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    results = [r.get("content", "") for r in resp.json().get("results", [])]
+        
+        if not results and settings.SERPER_API_KEY:
+            url = "https://google.serper.dev/search"
+            headers = {"X-API-KEY": settings.SERPER_API_KEY, "Content-Type": "application/json"}
+            payload = {"q": search_query, "num": 3}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                if resp.status_code == 200:
+                    results = [r.get("snippet", "") for r in resp.json().get("organic", [])]
 
-@router.post("/loop", response_model=FeedbackLoopResponse)
+        if results:
+            social_context = "\n💬 FEEDBACK SOCIAL:\n" + "\n".join([f"- {r[:200]}..." for r in results])
+            
+    except Exception as e:
+        print(f"[Feedback] Erro na busca social: {e}")
+    
+    return {"social_context": social_context}
+
 async def feedback_loop(use_mock: bool = False):
     """
     Consulta métricas (Views, CTR) dos vídeos publicados e atualiza o DB.

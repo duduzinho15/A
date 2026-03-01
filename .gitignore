@@ -65,3 +65,9 @@ update_*.py
 node_modules/
 dist/
 build/
+
+python_service/token_sheets.json
+
+setup_notion_db.py
+
+Docs/Fixing Google Sheets Sync.md

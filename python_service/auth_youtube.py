@@ -3,9 +3,12 @@ import os
 import argparse
 import sys
 
+# youtube.force-ssl: obrigatório para pin_comment() funcionar.
+# Token gerado aqui deve cobrir TODOS os escopos que o servico usa.
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly"
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl",  # Pin comment + moderacao
 ]
 
 def authenticate(code=None):

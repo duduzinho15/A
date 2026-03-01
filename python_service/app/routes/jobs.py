@@ -131,6 +131,12 @@ async def update_job(job_id: str, update: JobUpdate):
         raise HTTPException(status_code=500, detail="Erro de conexão com o banco.")
     
     try:
+        # Validação de UUID para evitar erro 500 com "undefined" do n8n
+        try:
+            uuid.UUID(job_id)
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=400, detail="ID de job inválido. Deve ser um UUID.")
+
         with conn.cursor() as cur:
             # Montagem dinâmica da query
             fields = []
@@ -202,6 +208,12 @@ async def get_job(job_id: str):
         raise HTTPException(status_code=500, detail="Erro de conexão com o banco.")
     
     try:
+        # Validação de UUID
+        try:
+            uuid.UUID(job_id)
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=400, detail="ID de job inválido. Deve ser um UUID.")
+
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM video_jobs WHERE id = %s", (job_id,))
             job = cur.fetchone()

@@ -1,0 +1,56 @@
+services:
+  firecrawl:
+    image: ghcr.io/firecrawl/firecrawl:latest
+    container_name: firecrawl
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      - REDIS_URL=redis://firecrawl-redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://firecrawl-redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+      - POSTGRES_USER=firecrawl
+      - POSTGRES_PASSWORD=firecrawl
+      - POSTGRES_DB=firecrawl
+      - POSTGRES_HOST=firecrawl-db
+      - POSTGRES_PORT=5432
+      - RABBITMQ_URL=amqp://firecrawl-rabbitmq:5672
+      - NUQ_RABBITMQ_URL=amqp://firecrawl-rabbitmq:5672
+      - USE_DB_AUTHENTICATION=false
+      - PORT=3002
+      - NUM_WORKERS_PER_QUEUE=1
+      - CRAWL_CONCURRENT_REQUESTS=2
+      - BROWSER_POOL_SIZE=2
+    command: node dist/src/harness.js --start-docker
+    depends_on:
+      - firecrawl-redis
+      - playwright-service
+      - firecrawl-rabbitmq
+      - firecrawl-db
+
+  playwright-service:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    container_name: playwright-service
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+    mem_limit: 2G
+
+  firecrawl-redis:
+    image: redis:alpine
+    container_name: firecrawl-redis
+    restart: unless-stopped
+
+  firecrawl-rabbitmq:
+    image: rabbitmq:3-management
+    container_name: firecrawl-rabbitmq
+    restart: unless-stopped
+
+  firecrawl-db:
+    image: postgres:16-alpine
+    container_name: firecrawl-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=firecrawl
+      - POSTGRES_PASSWORD=firecrawl
+      - POSTGRES_DB=firecrawl

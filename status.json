@@ -1,0 +1,1 @@
+﻿{"running":true,"ollama_available":true,"ollama_host_fallback":"standard","uptime_seconds":110.9,"last_task":"sentinel_health_check","last_run":"2026-02-28T23:03:27.189430","tasks_completed":1,"errors":0,"next_scheduled":{"sentinel":"every 5 minutes","orchestrator":"daily at 00:00"}}

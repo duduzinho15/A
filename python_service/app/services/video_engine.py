@@ -23,10 +23,18 @@ import requests
 import yt_dlp
 import random
 import asyncio
+import httpx
+
+# --- FIX IMAGEMAGICK DOCKER (FASE 2) ---
+os.environ["HOME"] = "/tmp"
+os.environ["MAGICK_TEMPORARY_PATH"] = "/tmp"
+os.environ["XDG_CACHE_HOME"] = "/tmp"
+# --------------------------------------
+
 import edge_tts
 import json
 import numpy as np
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Any
 from pathlib import Path
 
 # --- Pillow (Processamento de Imagem) ---
@@ -40,8 +48,11 @@ from moviepy.editor import (
 )
 from moviepy.video.tools.subtitles import SubtitlesClip
 
+import cv2
+
 from app.config import settings
 from app.utils.database import get_db_connection
+from app.services.visual_gate import VisualGate
 from app.services.audio import AudioService
 
 # =============================================================================
@@ -133,11 +144,30 @@ def get_background_music(mood: str = "Epic") -> Optional[str]:
 
 
 def get_watermark_path() -> Optional[str]:
-    """Retorna o path do logo/watermark do canal."""
+    """
+    Retorna o path do logo/watermark do canal.
+
+    PRIORIDADE (do mais para o menos preferido):
+      1. DATA_MIDIA/branding/logo.png  (volume persistente — asset oficial)
+      2. DATA_MIDIA/branding/logo_full.png
+      3. OVERLAYS_DIR (fallback legado dentro do container)
+    """
+    # 1. Primeiro: volume de dados persistente (montado em /data_midia)
+    branding_dir = os.path.join(settings.DATA_MIDIA, "branding")
+    for name in ["logo.png", "logo_full.png", "Logo.png"]:
+        path = os.path.join(branding_dir, name)
+        if os.path.exists(path):
+            logger.info("[Branding] Logo carregado de DATA_MIDIA: %s", name)
+            return path
+
+    # 2. Fallback legado: pasta overlays dentro do container
     for name in ["watermark.png", "logo.png", "Logo.png"]:
         path = os.path.join(OVERLAYS_DIR, name)
         if os.path.exists(path):
+            logger.warning("[Branding] Logo carregado de OVERLAYS_DIR (legado): %s", name)
             return path
+
+    logger.warning("[Branding] Nenhum logo encontrado — vídeo sem watermark.")
     return None
 
 
@@ -199,9 +229,36 @@ def detect_stock_watermark(img_path: str) -> bool:
     return False
 
 
-# =============================================================================
-# PASSO A — BLURRED BACKGROUND PADDING (O coração do refactoring visual)
-# =============================================================================
+def create_scoreboard_overlay(placar: str, gols: Optional[List[str]] = None) -> Optional[Any]:
+    """
+    Cria um overlay visual de placar para o topo do vídeo.
+    Ex: [ PLACAR: 2 x 0 ]
+    """
+    if not placar or placar == "N/A" or len(placar) < 3:
+        return None
+    
+    try:
+        from moviepy.editor import ColorClip, TextClip, CompositeVideoClip
+        
+        # Fundo do placar: Barra semitransparente preta
+        bg = ColorClip(size=(TARGET_W, 80), color=(0, 0, 0)).set_opacity(0.65)
+        
+        # Texto do placar
+        score_text = f"PLACAR: {placar}"
+        txt = TextClip(
+            score_text,
+            fontsize=45,
+            color='#FFDD00', # Amarelo Futebas
+            font=get_montserrat_black(),
+            stroke_color="black",
+            stroke_width=2
+        ).set_position(("center", "center"))
+        
+        scoreboard = CompositeVideoClip([bg, txt], size=(TARGET_W, 80))
+        return scoreboard.set_position(("center", 60)).set_start(3) # Começa aos 3s
+    except Exception as e:
+        logger.warning("[Scoreboard] Falha ao criar overlay: %s", e)
+        return None
 
 def make_blurred_background(img_path: str) -> Optional[str]:
     """
@@ -210,6 +267,9 @@ def make_blurred_background(img_path: str) -> Optional[str]:
 
     MATEMÁTICA DO REDIMENSIONAMENTO:
     ─────────────────────────────────
+    Cache:
+        - Verifica se a imagem já foi processada (hash do path).
+        - Se sim, retorna o path do cache imediatamente.
     Camada de FUNDO (blurred):
         - A imagem é redimensionada para altura 1920px (mantendo aspect ratio).
           Fórmula: new_w = original_w * (1920 / original_h)
@@ -231,6 +291,17 @@ def make_blurred_background(img_path: str) -> Optional[str]:
         Path do arquivo de saída temporário (PNG), ou None se falhar.
     """
     try:
+        import hashlib
+        # ── SISTEMA DE CACHE (v13 Turbo) ──────────────────────────────────
+        cache_dir = os.path.join(settings.DATA_MIDIA, "cache", "blur_bg")
+        os.makedirs(cache_dir, exist_ok=True)
+        img_hash = hashlib.md5(img_path.encode()).hexdigest()
+        cache_path = os.path.join(cache_dir, f"blur_{img_hash}.jpg")
+
+        if os.path.exists(cache_path):
+            logger.info("[BlurBG] Cache hit: %s", os.path.basename(cache_path))
+            return cache_path
+
         img = Image.open(img_path).convert("RGB")
         orig_w, orig_h = img.size
 
@@ -280,12 +351,11 @@ def make_blurred_background(img_path: str) -> Optional[str]:
         canvas.paste(bg, (0, 0))            # Fundo desfocado
         canvas.paste(front, (paste_x, paste_y))  # Imagem nítida centralizada
 
-        # Salva em temp
-        out_path = os.path.join(TEMP_DIR, f"blur_bg_{uuid.uuid4().hex}.jpg")
-        canvas.save(out_path, "JPEG", quality=90)
-        logger.info("[BlurBG] Gerado: %s (frente=%dx%d @ y=%d)",
-                    os.path.basename(out_path), front_w, front_h, paste_y)
-        return out_path
+        # Salva em cache
+        canvas.save(cache_path, "JPEG", quality=85) # Quality 85 for speed/size
+        logger.info("[BlurBG] Gerado e Cacheado: %s (frente=%dx%d @ y=%d)",
+                    os.path.basename(cache_path), front_w, front_h, paste_y)
+        return cache_path
 
     except Exception as e:
         logger.error("[BlurBG] Falha ao processar '%s': %s", img_path, e)
@@ -401,23 +471,30 @@ def generate_word_level_clips(
         logger.info("[Whisper] %d grupos de legendas criados.", len(groups))
 
         # ── Cria TextClips para cada grupo ───────────────────────────────
+        import random
         for group in groups:
             try:
+                # Estilo TikTok: Cores dinâmicas para as bordas de palavras chave
+                colors = ["#FFDD00", "#FFFFFF", "#00FFDD"]
+                active_color = colors[0] if len(group["text"]) > 5 else random.choice(colors)
+                # O highlight pode ser uma leve rotação randômica ou mudança de fonte
+                font_z = font_path
+
                 txt_clip = (
                     TextClip(
                         group["text"],
-                        font=font_path,
-                        fontsize=72,
-                        color="#FFDD00",          # Amarelo da marca Futebas
+                        font=font_z,
+                        fontsize=85, # Aumentado para estilo dinâmico
+                        color=active_color,         
                         stroke_color="black",
-                        stroke_width=5,           # Borda preta grossa para legibilidade
+                        stroke_width=6, # Mais bold
                         method="caption",
-                        size=(int(TARGET_W * 0.88), None),  # 88% da largura → margens laterais
+                        size=(int(TARGET_W * 0.90), None), 
                         align="center"
                     )
                     .set_start(group["start"])
                     .set_duration(group["duration"])
-                    .set_position(("center", 0.75), relative=True)  # Safe zone inferior
+                    .set_position(("center", 0.70), relative=True)  # Subiu levemente
                 )
                 clips.append(txt_clip)
             except Exception as e:
@@ -436,6 +513,29 @@ def generate_word_level_clips(
 # =============================================================================
 # HELPERS DE DOWNLOAD E PROCESSAMENTO
 # =============================================================================
+
+# URLs de placeholder/dummy que devem ser rejeitadas
+_PLACEHOLDER_DOMAINS = {
+    "dummyimage.com", "via.placeholder.com", "placeholder.com",
+    "placekitten.com", "lorempixel.com", "fillmurray.com",
+    "picsum.photos", "fakeimg.pl", "loremflickr.com"
+}
+
+
+def reject_placeholder_urls(urls: List[str]) -> List[str]:
+    """
+    Filtra URLs de placeholder/dummy que não devem ir para o vídeo.
+    Retorna a lista limpa de URLs válidas.
+    """
+    valid = []
+    for url in urls:
+        is_placeholder = any(dom in url.lower() for dom in _PLACEHOLDER_DOMAINS)
+        if is_placeholder:
+            logger.info("[URLFilter] URL de placeholder rejeitada: %s", url)
+        else:
+            valid.append(url)
+    return valid
+
 
 def download_file(url: str, ext: str = "jpg") -> Optional[str]:
     """Baixa um arquivo (imagem/áudio) via requests com timeout e UA."""
@@ -479,6 +579,39 @@ def download_video_clip(url: str) -> Optional[str]:
     except Exception as e:
         logger.warning("[Download] Erro yt-dlp '%s': %s", url, e)
     return None
+
+
+# --- NOVOS HELPERS ASSÍNCRONOS (v13 Turbo) ---
+
+async def async_download_file(url: str, ext: str = "jpg") -> Optional[str]:
+    """Versão assíncrona do download_file usando httpx."""
+    if not url: return None
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                )
+            }
+            response = await client.get(url, headers=headers)
+            if response.status_code == 200 and len(response.content) > 1024:
+                filename = f"asset_{uuid.uuid4().hex}.{ext}"
+                filepath = os.path.join(TEMP_DIR, filename)
+                # Escrita síncrona de arquivo é rápida o suficiente para imagens pequenos, 
+                # mas em 'Turbo' usamos threads para evitar bloquear o event loop em IO pesado.
+                await asyncio.to_thread(lambda: open(filepath, "wb").write(response.content))
+                return filepath
+    except Exception as e:
+        logger.warning("[AsyncDownload] Erro ao baixar '%s': %s", url, e)
+    return None
+
+
+async def async_download_video_clip(url: str) -> Optional[str]:
+    """Versão assíncrona do download_video_clip rodando yt-dlp em thread."""
+    if not url: return None
+    # Rodamos o download_video_clip (que é síncrono e pesado) em uma thread separada
+    return await asyncio.to_thread(download_video_clip, url)
 
 
 def fetch_google_images(query: str, limit: int = 3) -> List[str]:
@@ -569,6 +702,87 @@ def fetch_external_assets(query: str, limit: int = 3) -> List[str]:
 
 
 # =============================================================================
+# B-ROLL SCORING — relevância de clip por keywords
+# =============================================================================
+
+def score_clip_relevance(clip_filename: str, visual_keywords: List[str]) -> int:
+    """
+    Pontua a relevância de um clip baseado em quantas keywords visuais
+    do roteiro aparecem no nome do arquivo ou no path.
+
+    Score: 0-100 (100 = todos os termos estão presentes)
+
+    Args:
+        clip_filename: Path ou nome do arquivo do clip
+        visual_keywords: Lista de keywords do campo `keywords_visuais` do roteiro
+
+    Returns:
+        Score de 0 a 100.
+    """
+    if not visual_keywords:
+        return 50  # Score neutro quando não há keywords
+
+    name_lower = os.path.basename(clip_filename).lower()
+    matches = sum(1 for kw in visual_keywords if kw.lower() in name_lower)
+    return int((matches / len(visual_keywords)) * 100)
+
+
+# =============================================================================
+# YOUTUBE CREATIVE COMMONS (yt-dlp — gratuito)
+# =============================================================================
+
+def fetch_youtube_cc(query: str, max_duration: int = 30) -> Optional[str]:
+    """
+    Busca e baixa vídeo Creative Commons do YouTube via yt-dlp.
+    Filtra automaticamente para apenas vídeos com licença CC-BY.
+
+    Args:
+        query: Termo de busca (ex: "Palmeiras treino")
+        max_duration: Duração máxima em segundos (padrão 30s)
+
+    Returns:
+        Path do arquivo baixado, ou None se não encontrar.
+    """
+    video_id = uuid.uuid4().hex[:8]
+    template = os.path.join(TEMP_DIR, f"yt_cc_{video_id}.%(ext)s")
+
+    ydl_opts = {
+        "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]",
+        "outtmpl": template,
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "match_filter": yt_dlp.utils.match_filter_func(f"duration < {max_duration}"),
+        "socket_timeout": 20,
+        "retries": 2,
+        # Filtra apenas Creative Commons
+        "extract_flat": False,
+        "postprocessors": [],
+        # Busca com prefixo ytsearch e filtro de licença CC
+        "default_search": f"ytsearch5:{query} Creative Commons",
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch5:{query} licença CC", download=True)
+            if info and "entries" in info:
+                for entry in info["entries"]:
+                    if not entry:
+                        continue
+                    # Verifica licença CC no campo license
+                    license_field = (entry.get("license") or "").lower()
+                    if "creative commons" in license_field or "cc" in license_field:
+                        downloaded = ydl.prepare_filename(entry)
+                        if os.path.exists(downloaded):
+                            logger.info("[YT-CC] CC encontrado: %s", entry.get("title", "")[:50])
+                            return downloaded
+        logger.info("[YT-CC] Nenhum vídeo CC encontrado para: %s", query)
+    except Exception as e:
+        logger.warning("[YT-CC] Erro ao buscar CC para '%s': %s", query, e)
+    return None
+
+
+# =============================================================================
 # EFEITOS VISUAIS
 # =============================================================================
 
@@ -580,6 +794,68 @@ def apply_ken_burns(clip, duration: float, zoom_ratio: float = 0.08):
     def zoom(t):
         return 1 + zoom_ratio * (t / duration)
     return clip.resize(zoom)
+
+def apply_smart_crop(clip, target_w=1080, target_h=1920):
+    """
+    Usa OpenCV (Haar Cascades) no frame central do clip para encontrar rostos.
+    Faz o crop centrado no rosto mantendo o aspect ratio do Shorts (9:16).
+    Se não achar rosto, ou falhar, faz crop simples central.
+    """
+    try:
+        import cv2
+        import numpy as np
+        
+        # Pega frame na metade do clipe
+        mid_t = clip.duration / 2.0
+        frame = clip.get_frame(mid_t)
+        
+        ih, iw = frame.shape[:2]
+        
+        # Inicia detector OpenCV iterativo
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        
+        # minSize evita pegar "rostos" minúsculos que podem ser ruído de background
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        
+        if len(faces) > 0:
+            # Pega o maior rosto (por área)
+            largest_face = max(faces, key=lambda rect: rect[2] * rect[3])
+            x, y, w, h = largest_face
+            
+            cx = x + w // 2
+            cy = y + h // 2
+            
+            logger.info("[SmartCrop] Rosto detectado em (x=%d, y=%d) no clip de B-Roll.", cx, cy)
+        else:
+            logger.info("[SmartCrop] Nenhum rosto detectado, usando crop central limpo.")
+            cx, cy = iw // 2, ih // 2
+    except Exception as e:
+        logger.warning("[SmartCrop] Falha OpenCV, fallback para centro: %s", e)
+        # clip.size é formato (W, H)
+        iw, ih = clip.size[0], clip.size[1]
+        cx, cy = iw // 2, ih // 2
+
+    aspect = target_w / target_h
+    # Altura do crop será baseada na largura total se a largura for o gargalo
+    crop_h = min(ih, int(iw / aspect))
+    crop_w = min(iw, int(ih * aspect))
+
+    left = max(0, cx - crop_w // 2)
+    top = max(0, cy - crop_h // 2)
+    
+    # Adjust boundaries to remain inside the frame while maintaining size
+    if left + crop_w > iw: left = iw - crop_w
+    if top + crop_h > ih: top = ih - crop_h
+        
+    left = max(0, left)
+    top = max(0, top)
+    right = left + crop_w
+    bottom = top + crop_h
+
+    from moviepy.video.fx.all import crop as crop_fx
+    cropped_clip = crop_fx(clip, x1=left, y1=top, x2=right, y2=bottom)
+    return cropped_clip.resize(newsize=(target_w, target_h))
 
 
 def apply_copyright_protection(clip):
@@ -595,23 +871,23 @@ def apply_copyright_protection(clip):
 def _write_videofile_with_fallback(video, output_path: str):
     """
     Render: tenta NVENC (GPU) primeiro, fallback automático para libx264 (CPU).
-    O ultrafast preset é necessário para CPU — velocidade > qualidade perfeita.
+    Otimizado v13: Maior paralelismo e presets mais rápidos.
     """
     try:
         logger.info("[Render] Tentando NVENC (GPU)...")
         video.write_videofile(
             output_path, fps=24, codec="h264_nvenc", audio_codec="aac",
-            threads=4, preset="p5",
-            ffmpeg_params=["-gpu", "0", "-rc:v", "vbr", "-cq", "23",
-                           "-b:v", "6M", "-maxrate", "10M", "-bufsize", "12M",
-                           "-pix_fmt", "yuv420p", "-profile:v", "high"],
+            threads=8, preset="p1", # p1 é o mais rápido (Turbo)
+            ffmpeg_params=["-gpu", "0", "-rc:v", "vbr", "-cq", "24",
+                           "-b:v", "6M", "-maxrate", "12M", "-bufsize", "15M",
+                           "-pix_fmt", "yuv420p", "-profile:v", "main"],
         )
         logger.info("[Render] Finalizado com NVENC.")
     except Exception as gpu_exc:
         logger.warning("[Render] NVENC indisponível (%s), usando CPU (libx264)...", gpu_exc)
         video.write_videofile(
             output_path, fps=24, codec="libx264", audio_codec="aac",
-            threads=4, preset="ultrafast",
+            threads=8, preset="ultrafast", # Máxima velocidade
         )
         logger.info("[Render] Finalizado com libx264 (CPU).")
 
@@ -625,7 +901,6 @@ def create_stinger(duration: float = 0.6) -> Optional:
         logo = ImageClip(logo_path).resize(width=400).set_duration(duration)
 
         def scale_effect(t):
-            # 0 → 0.1, meio → 1.5, fim → 0.1
             if t < duration / 2:
                 return 0.1 + 1.4 * (t / (duration / 2))
             return 1.5 - 1.4 * ((t - duration / 2) / (duration / 2))
@@ -636,6 +911,234 @@ def create_stinger(duration: float = 0.6) -> Optional:
     except Exception as e:
         logger.warning("[Stinger] Erro: %s", e)
         return None
+
+
+def add_lower_third(text: str, duration: float, start_time: float = 0.0) -> Optional:
+    """
+    Cria um lower-third dinâmico na base do frame.
+    Exibido durante as primeiras `duration` segundos do vídeo ou de um segmento.
+
+    Args:
+        text: Texto a exibir (ex: "Estádio Morumbi • São Paulo, SP")
+        duration: Duração em segundos que o banner fica visível
+        start_time: Quando o banner aparece no timeline
+
+    Returns:
+        CompositeVideoClip-ready TextClip ou None.
+    """
+    try:
+        font_path = get_montserrat_black()
+
+        # Fundo semitransparente (barra escura)
+        bar_h = 90
+        bar = (
+            ColorClip(size=(TARGET_W, bar_h), color=(10, 10, 30))
+            .set_opacity(0.75)
+            .set_duration(duration)
+            .set_start(start_time)
+            .set_position((0, TARGET_H - bar_h - 80))  # 80px acima da base (safe zone)
+        )
+
+        # Texto do lower-third
+        txt = (
+            TextClip(
+                text.upper(),
+                font=font_path,
+                fontsize=38,
+                color="white",
+                stroke_color="black",
+                stroke_width=2,
+                method="caption",
+                size=(TARGET_W - 60, None),
+                align="West"
+            )
+            .set_duration(duration)
+            .set_start(start_time)
+            .set_position((30, TARGET_H - bar_h - 75))
+        )
+
+        logger.info("[LowerThird] Criado: '%s' por %.1fs", text[:40], duration)
+        return [bar, txt]
+
+    except Exception as e:
+        logger.warning("[LowerThird] Erro ao criar lower-third: %s", e)
+        return []
+
+
+def add_end_screen(total_duration: float, end_duration: float = 3.5) -> List:
+    """
+    Adiciona end screen nos últimos `end_duration` segundos.
+
+    ESTRATÉGIA:
+      1. Se existir DATA_MIDIA/branding/end_screen_vertical.png usa como fundo
+         (imagem oficial do canal Futebas com "Inscreva-se" já estampado).
+      2. Caso contrário, usa ColorClip escuro semitransparente + TextClip.
+
+    Args:
+        total_duration: Duração total do vídeo
+        end_duration: Quantos segundos antes do fim mostrar o end screen
+
+    Returns:
+        Lista de clips para CompositeVideoClip.
+    """
+    start = max(0.0, total_duration - end_duration)
+    try:
+        font_path = get_montserrat_black()
+        branding_dir = os.path.join(settings.DATA_MIDIA, "branding")
+        end_img_path = os.path.join(branding_dir, "end_screen_vertical.png")
+
+        clips = []
+
+        # ── Fundo: imagem oficial ou ColorClip ───────────────────────────────
+        if os.path.exists(end_img_path):
+            # Usa a imagem "Inscreva-se" do canal — já tem o visual correto
+            bg = (
+                ImageClip(end_img_path)
+                .resize((TARGET_W, TARGET_H))
+                .set_duration(end_duration)
+                .set_start(start)
+                .set_position("center")
+            )
+            clips.append(bg)
+            logger.info("[EndScreen] Usando end_screen_vertical.png do branding.")
+        else:
+            # Fallback genérico
+            overlay = (
+                ColorClip(size=(TARGET_W, TARGET_H), color=(0, 0, 0))
+                .set_opacity(0.55)
+                .set_duration(end_duration)
+                .set_start(start)
+                .set_position("center")
+            )
+            clips.append(overlay)
+
+            txt_main = (
+                TextClip(
+                    "Siga o Futebas\npara mais ⚽",
+                    font=font_path,
+                    fontsize=80,
+                    color="#FFDD00",
+                    stroke_color="black",
+                    stroke_width=5,
+                    method="caption",
+                    size=(TARGET_W - 80, None),
+                    align="center"
+                )
+                .set_duration(end_duration)
+                .set_start(start)
+                .set_position(("center", 0.38), relative=True)
+            )
+            txt_cta = (
+                TextClip(
+                    "👍 Curte e compartilha!",
+                    font=font_path,
+                    fontsize=52,
+                    color="white",
+                    stroke_color="black",
+                    stroke_width=3,
+                    method="caption",
+                    size=(TARGET_W - 80, None),
+                    align="center"
+                )
+                .set_duration(end_duration)
+                .set_start(start)
+                .set_position(("center", 0.60), relative=True)
+            )
+            clips.extend([txt_main, txt_cta])
+            logger.info("[EndScreen] Fallback genérico (end_screen_vertical.png não encontrado).")
+
+        logger.info("[EndScreen] Criado: aparece em t=%.1fs por %.1fs", start, end_duration)
+        return clips
+
+    except Exception as e:
+        logger.warning("[EndScreen] Erro ao criar end screen: %s", e)
+        return []
+
+
+def add_teaser_intro(clips_list: list, teaser_duration: float = 2.0) -> Optional:
+    """
+    Extrai um teaser de 2s do clipe mais dinâmico (1º vídeo ou 2ª imagem)
+    para colocar no início como 'preview do que está por vir'.
+    Aumenta a retenção nos primeiros 3s (período crítico).
+
+    Args:
+        clips_list: Lista de clips do timeline
+        teaser_duration: Duração do teaser em segundos
+
+    Returns:
+        Clip de teaser ou None se não for possível extrair.
+    """
+    try:
+        # Prefere clips de vídeo (mais dinâmicos) para o teaser
+        for item in clips_list:
+            if item.get("type") == "video":
+                clip = item["clip"]
+                # Pega um trecho do meio do vídeo (mais dinâmico que o início)
+                mid = clip.duration / 2
+                start = max(0, mid - teaser_duration / 2)
+                end = min(clip.duration, start + teaser_duration)
+                teaser = clip.subclip(start, end)
+                logger.info("[Teaser] Teaser de %.1fs extraído do vídeo highlight", teaser_duration)
+                return teaser
+
+        # Fallback: usa 2ª imagem se disponível (mais informativa que a capa)
+        image_clips = [item for item in clips_list if item.get("type") == "image"]
+        if len(image_clips) >= 2:
+            teaser = image_clips[1]["clip"].subclip(0, min(teaser_duration, image_clips[1]["clip"].duration))
+            logger.info("[Teaser] Teaser de %.1fs extraído da 2ª imagem", teaser_duration)
+            return teaser
+
+    except Exception as e:
+        logger.warning("[Teaser] Não foi possível criar teaser: %s", e)
+    return None
+
+
+def apply_color_grading(clip, mood: str = "Epic"):
+    """
+    Aplica color grading básico via Pillow + numpy dependendo do mood.
+
+    Moods:
+        Epic   → Alto contraste, levemente dessaturado, tons frios
+        Happy  → Saturação elevada, tons quentes, brilho +10%
+        Rock   → Baixo brilho, contraste alto, tint vermelho
+        Sad    → Dessaturado (quase B&W), tom azulado
+
+    Args:
+        clip: VideoClip ou ImageClip do MoviePy
+        mood: Mood/clima do vídeo
+
+    Returns:
+        Clip com color grading aplicado.
+    """
+    try:
+        from PIL import Image as PILImage, ImageEnhance as PILEnhance
+        from moviepy.video.VideoClip import VideoClip
+
+        # Parâmetros por mood
+        grading = {
+            "Epic": {"brightness": 0.95, "contrast": 1.25, "saturation": 0.85},
+            "Happy": {"brightness": 1.10, "contrast": 1.10, "saturation": 1.30},
+            "Rock":  {"brightness": 0.85, "contrast": 1.40, "saturation": 0.90},
+            "Sad":   {"brightness": 0.90, "contrast": 1.05, "saturation": 0.40},
+        }
+        params = grading.get(mood, grading["Epic"])
+
+        def grade_frame(frame):
+            """Aplica os ajustes em cada frame via PIL."""
+            img = PILImage.fromarray(frame, "RGB")
+            img = PILEnhance.Brightness(img).enhance(params["brightness"])
+            img = PILEnhance.Contrast(img).enhance(params["contrast"])
+            img = PILEnhance.Color(img).enhance(params["saturation"])
+            return np.array(img)
+
+        graded = clip.fl_image(grade_frame)
+        logger.info("[ColorGrade] Mood '%s' aplicado (br=%.2f, ct=%.2f, sat=%.2f)",
+                    mood, params["brightness"], params["contrast"], params["saturation"])
+        return graded
+
+    except Exception as e:
+        logger.warning("[ColorGrade] Erro ao aplicar color grading (mood=%s): %s", mood, e)
+        return clip
 
 
 # =============================================================================
@@ -731,8 +1234,12 @@ def generate_video(job_id: str, payload: dict):
         audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
         if not os.path.exists(audio_path):
             if script_text and len(script_text) > 5:
-                logger.info("[Audio] Gerando narração com edge-tts...")
-                asyncio.run(audio_service.generate(script_text, job_id))
+                logger.info("[Audio] Gerando narração com edge-tts (timeout 60s)...")
+                try:
+                    asyncio.run(asyncio.wait_for(audio_service.generate(script_text, job_id), timeout=60.0))
+                except asyncio.TimeoutError:
+                    logger.error("[Audio] Timeout na geração de áudio!")
+                    raise RuntimeError("Timeout na geração de áudio (edge-tts)")
 
         if not os.path.exists(audio_path):
             raise RuntimeError("Falha crítica: áudio não gerado ou script vazio.")
@@ -742,20 +1249,49 @@ def generate_video(job_id: str, payload: dict):
         logger.info("[Audio] Duração da narração: %.2fs | Total do vídeo: %.2fs",
                     main_audio.duration, total_duration)
 
-        # ── 1. DOWNLOAD E FILTRAGEM DE IMAGENS ──────────────────────────
+        # ── 1. DOWNLOAD PARALELO DE ASSETS (v13 Turbo) ──────────────────
         raw_images = assets.get("all_images", [])
-        logger.info("[Assets] Processando %d imagens do payload...", len(raw_images))
+        # Filtra URLs de placeholder antes de baixar
+        raw_images = reject_placeholder_urls(raw_images)
+        video_urls = assets.get("all_videos", [])
+        
+        logger.info("[TurboIO] Iniciando ingestão paralela de %d imagens e %d vídeos...", 
+                    len(raw_images), len(video_urls))
 
-        image_clips = []
-        for url in raw_images[:12]:  # Limite de 12 imagens para não travar
-            # Ignora URLs de placeholder genéricas
-            if "dummyimage" in url or "placeholder" in url:
-                logger.info("[Assets] URL de placeholder ignorada: %s", url)
-                continue
-
+        # Criamos lista de tarefas para download simultâneo
+        tasks = []
+        # Imagens (limite de 12 para evitar abuso de banda)
+        for url in raw_images[:12]:
             ext = "png" if url.lower().endswith(".png") else "jpg"
-            raw_path = download_file(url, ext=ext)
-            if not raw_path:
+            tasks.append(async_download_file(url, ext=ext))
+        
+        # Vídeos (limite de 3 para não estourar RAM/CPU)
+        for v_url in video_urls[:3]:
+            tasks.append(async_download_video_clip(v_url))
+
+        # Executa tudo em paralelo! (v13)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            downloaded_paths = loop.run_until_complete(asyncio.gather(*tasks))
+        finally:
+            loop.close()
+
+        # Separa imagens e vídeos baixados
+        downloaded_images = [p for p in downloaded_paths if p and p.endswith((".jpg", ".png", ".jpeg"))]
+        downloaded_videos = [p for p in downloaded_paths if p and p.endswith(".mp4")]
+
+        # Keywords visuais do roteiro para B-roll scoring
+        visual_keywords = payload.get("keywords_visuais", [])
+        mood = payload.get("mood", mood)  # Sobrescreve mood se o roteiro especificou
+
+        # Processamento das imagens baixadas
+        image_clips = []
+        for raw_path in downloaded_images:
+            # --- Nível 3: Validação Semântica (Visual Gate) ---
+            tema_validacao = visual_keywords[0] if visual_keywords else (title or "futebol")
+            if not VisualGate.is_relevant(raw_path, tema=tema_validacao):
+                logger.warning("[VisualGate] Imagem descartada por incoerência: %s", os.path.basename(raw_path))
                 continue
 
             clip = process_image_asset(raw_path, duration=4.0)
@@ -764,34 +1300,27 @@ def generate_video(job_id: str, payload: dict):
 
         logger.info("[Assets] %d imagens aceitas após filtragem.", len(image_clips))
 
-        # ── 2. DOWNLOAD DE VÍDEOS HIGHLIGHT ─────────────────────────────
+        # ── 2. PROCESSAMENTO DOS VÍDEOS BAIXADOS ────────────────────────
         video_clips = []
-        video_urls = assets.get("all_videos", [])
-        for vid_url in video_urls[:3]:  # Máximo 3 highlights
-            vid_path = download_video_clip(vid_url)
-            if vid_path and os.path.exists(vid_path):
-                try:
-                    clip = VideoFileClip(vid_path).without_audio()
-                    clip = apply_copyright_protection(clip)
+        for vid_path in downloaded_videos:
+            try:
+                clip = VideoFileClip(vid_path).without_audio()
+                clip = apply_copyright_protection(clip)
 
-                    # Recorta 5 segundos do meio do vídeo (parte mais dinâmica)
-                    dur = 5.0
-                    if clip.duration > dur:
-                        # Começa a 40% do vídeo para pegar o "melhor momento"
-                        start = max(0, clip.duration * 0.4 - dur / 2)
-                        start = min(start, clip.duration - dur)
-                        clip = clip.subclip(start, start + dur)
+                # Recorta 5 segundos do meio do vídeo
+                dur = 5.0
+                if clip.duration > dur:
+                    start = max(0, clip.duration * 0.4 - dur / 2)
+                    start = min(start, clip.duration - dur)
+                    clip = clip.subclip(start, start + dur)
 
-                    # Redimensiona para 9:16 sem esticar: crop central
-                    clip = (clip
-                           .resize(height=TARGET_H)
-                           .crop(width=TARGET_W, height=TARGET_H,
-                                 x_center=clip.w / 2, y_center=TARGET_H / 2))
-                    video_clips.append({"type": "video", "clip": clip})
-                    logger.info("[Highlight] Vídeo processado: %s", os.path.basename(vid_path))
-                    break  # Um highlight é suficiente para o primeiro slot
-                except Exception as e:
-                    logger.warning("[Highlight] Erro ao processar vídeo: %s", e)
+                # Redimensiona para 9:16 usando Smart Crop
+                clip = apply_smart_crop(clip, target_w=TARGET_W, target_h=TARGET_H)
+
+                video_clips.append({"type": "video", "clip": clip})
+                logger.info("[Highlight] Vídeo processado com SmartCrop: %s", os.path.basename(vid_path))
+            except Exception as e:
+                logger.warning("[Highlight] Erro ao processar vídeo: %s", e)
 
         # ── 3. MONTAGEM DA LISTA DE ASSETS ──────────────────────────────
         # Intercala: [imagem_capa, video_highlight, imagem, imagem, ...]
@@ -818,21 +1347,32 @@ def generate_video(job_id: str, payload: dict):
                 for fpath in new_files:
                     if fpath.endswith(".mp4"):
                         try:
-                            c = (VideoFileClip(fpath).without_audio()
-                                 .resize(height=TARGET_H)
-                                 .crop(width=TARGET_W, height=TARGET_H,
-                                       x_center=TARGET_W / 2, y_center=TARGET_H / 2))
+                            # Panic Search: subclip + smart crop
+                            c = VideoFileClip(fpath).without_audio()
                             if c.duration > 5:
                                 c = c.subclip(0, 5)
+                            c = apply_smart_crop(c, target_w=TARGET_W, target_h=TARGET_H)
+                            
                             downloaded_assets.append({"type": "video", "clip": c})
                             current_coverage += c.duration
                         except Exception:
                             pass
                     else:
-                        clip = process_image_asset(fpath, duration=4.0)
-                        if clip:
-                            downloaded_assets.append({"type": "image", "clip": clip})
-                            current_coverage += 4.0
+                        if VisualGate.is_relevant(fpath, tema=tema_validacao):
+                            clip = process_image_asset(fpath, duration=4.0)
+                            if clip:
+                                downloaded_assets.append({"type": "image", "clip": clip})
+                                current_coverage += 4.0
+                        else:
+                            logger.info("[VisualGate] Imagem de panic search descartada: %s", os.path.basename(fpath))
+
+        # ── 3c. SCOREBOARD OVERLAY ──────────────────────────────────────
+        placar = payload.get("placar", "N/A")
+        gols = payload.get("gols", [])
+        scoreboard = create_scoreboard_overlay(placar, gols)
+        if scoreboard:
+            scoreboard = scoreboard.set_duration(total_duration - 5)
+            logger.info("[Scoreboard] Overlay de placar adicionado: %s", placar)
 
         # ── 4. MONTAGEM DO TIMELINE COM CROSSFADE ────────────────────────
         stinger = create_stinger(0.6)
@@ -840,6 +1380,7 @@ def generate_video(job_id: str, payload: dict):
         visual_clips = []
         curr_time = 0.0
         asset_idx = 0
+        transition_times = []  # Armazena timestamps para SFX
 
         while curr_time < total_duration:
             clip = None
@@ -853,12 +1394,7 @@ def generate_video(job_id: str, payload: dict):
                 if fallback_loop:
                     rem = total_duration - curr_time
                     try:
-                        loop_clip = (VideoFileClip(fallback_loop)
-                                     .resize(height=TARGET_H)
-                                     .crop(width=TARGET_W, height=TARGET_H,
-                                           x_center=TARGET_W / 2, y_center=TARGET_H / 2)
-                                     .without_audio()
-                                     .loop(duration=rem))
+                        loop_clip = apply_smart_crop(VideoFileClip(fallback_loop).without_audio(), target_w=TARGET_W, target_h=TARGET_H).loop(duration=rem)
                         clip = loop_clip
                     except Exception:
                         clip = ColorClip(
@@ -879,6 +1415,7 @@ def generate_video(job_id: str, payload: dict):
                 # eliminando o corte seco que causa queda na retenção
                 if visual_clips:
                     clip = clip.crossfadein(0.5)
+                    transition_times.append(curr_time)
 
                 visual_clips.append(clip)
                 curr_time += clip.duration
@@ -893,15 +1430,24 @@ def generate_video(job_id: str, payload: dict):
         video = concatenate_videoclips(visual_clips, method="compose", padding=-0.5)
         video = video.subclip(0, min(total_duration, video.duration))
 
-        # ── 5. MIXAGEM DE ÁUDIO (narração + trilha sonora) ───────────────
+        # ── 4b. TEASER INTRO (2s do clipe mais dinâmico no início) ────────
+        teaser = add_teaser_intro(downloaded_assets, teaser_duration=2.0)
+        if teaser and visual_clips:
+            try:
+                # Insere o teaser como primeiro frame (antes do vídeo principal)
+                visual_clips = [teaser] + visual_clips
+                logger.info("[Teaser] Intro preview inserida no início do timeline.")
+            except Exception as e:
+                logger.warning("[Teaser] Erro ao inserir intro: %s", e)
+
+        # ── 5. MIXAGEM DE ÁUDIO (narração + trilha sonora + SFX) ───────────────
+        audio_layers = [main_audio]
+        
         bg_music_path = get_background_music(mood)
         if bg_music_path:
             try:
                 bg_music = AudioFileClip(bg_music_path)
 
-                # Loop robusto: calcula quantas repetições são necessárias
-                # e concatena para cobrir toda a duração do vídeo.
-                # Motivo: audio_loop() pode ter bugs em versões antigas do moviepy.
                 if bg_music.duration < total_duration:
                     loops_needed = int(total_duration / bg_music.duration) + 2
                     bg_music = concatenate_audioclips([bg_music] * loops_needed)
@@ -911,13 +1457,29 @@ def generate_video(job_id: str, payload: dict):
                             .volumex(0.10)          # Ducking: 10% do volume original
                             .audio_fadeout(2.0))    # Fade out nos últimos 2s
 
-                final_audio = CompositeAudioClip([main_audio, bg_music])
-                video = video.set_audio(final_audio)
+                audio_layers.append(bg_music)
                 logger.info("[Audio] Trilha mixada: %s @10%% volume", os.path.basename(bg_music_path))
             except Exception as e:
-                logger.error("[Audio] Erro ao mixar trilha, usando só narração: %s", e)
-                video = video.set_audio(main_audio)
-        else:
+                logger.error("[Audio] Erro ao mixar trilha: %s", e)
+
+        # Trilha de Efeitos Sonoros (SFX) nas Transições
+        sfx_path = os.path.join(ASSETS_DIR, "sfx", "swoosh.mp3")
+        if os.path.exists(sfx_path) and transition_times:
+            try:
+                base_swoosh = AudioFileClip(sfx_path).volumex(0.2)
+                for t_time in transition_times:
+                    # Inserindo o som de swoosh no momento do crossfade
+                    sfx_clip = base_swoosh.set_start(t_time).set_duration(base_swoosh.duration)
+                    audio_layers.append(sfx_clip)
+                logger.info("[Audio] SFX Swoosh aplicado em %d transições.", len(transition_times))
+            except Exception as e:
+                logger.warning("[Audio] Falha ao injetar Swoosh SFX: %s", e)
+
+        try:
+            final_audio = CompositeAudioClip(audio_layers)
+            video = video.set_audio(final_audio)
+        except Exception as err:
+            logger.error("[Audio] Falha ao criar CompositeAudioClip: %s", err)
             video = video.set_audio(main_audio)
 
         # ── 6. LEGENDAS WORD-LEVEL (Whisper) ─────────────────────────────
@@ -931,9 +1493,31 @@ def generate_video(job_id: str, payload: dict):
 
         if subtitle_clips:
             logger.info("[Subtitles] Aplicando %d clips de legenda word-level.", len(subtitle_clips))
+            # Garante que as legendas fiquem acima do vídeo mas abaixo do scoreboard/logo
             video = CompositeVideoClip([video] + subtitle_clips)
         else:
             logger.warning("[Subtitles] Nenhuma legenda gerada — vídeo sem legenda word-level.")
+
+        # --- FIX: Garante que as legendas usem o TMPDIR correto ---
+        os.environ["MAGICK_TEMPORARY_PATH"] = "/tmp"
+
+        # ── 6b. COLOR GRADING por mood ──────────────────────────────────
+        try:
+            video = apply_color_grading(video, mood=mood)
+        except Exception as e:
+            logger.warning("[ColorGrade] Falhou, ignorando: %s", e)
+
+        # ── 6c. LOWER-THIRDS (nome/contexto nos primeiros 6s) ─────────────
+        lower_third_text = payload.get("lower_third", "") or title[:50]
+        if lower_third_text:
+            lt_clips = add_lower_third(lower_third_text, duration=5.0, start_time=1.0)
+            if lt_clips:
+                video = CompositeVideoClip([video] + lt_clips)
+
+        # ── 6d. END SCREEN (últimos 3.5s) ─────────────────────────────────
+        end_clips = add_end_screen(total_duration, end_duration=3.5)
+        if end_clips:
+            video = CompositeVideoClip([video] + end_clips)
 
         # ── 7. BRANDING (Logo do canal) ───────────────────────────────────
         logo_path = get_watermark_path()
@@ -949,15 +1533,39 @@ def generate_video(job_id: str, payload: dict):
             except Exception as e:
                 logger.warning("[Branding] Erro ao aplicar logo: %s", e)
 
+        # ── 7b. SCOREBOARD (overlay final) ──────────────────────────────────
+        placar = payload.get("placar", "N/A")
+        scoreboard = create_scoreboard_overlay(placar)
+        if scoreboard:
+            scoreboard = scoreboard.set_duration(total_duration - scoreboard.start - 0.5)
+            video = CompositeVideoClip([video, scoreboard])
+            logger.info("[Scoreboard] Overlay de placar aplicado: %s", placar)
+
         # ── 8. RENDER FINAL ───────────────────────────────────────────────
         output_filename = f"video_{job_id}.mp4"
         output_path = os.path.join(OUTPUT_DIR, output_filename)
         logger.info("[Render] Iniciando render final → %s", output_path)
         _write_videofile_with_fallback(video, output_path)
 
+        # ── 8b. QUALITY GATE (pré-update do banco) ────────────────────────
+        try:
+            from app.services.quality_gate import run_full_quality_gate
+            title_meta = payload.get("title", "")
+            desc_meta = payload.get("description", "")
+            tags_meta = payload.get("tags", [])
+            qr = run_full_quality_gate(output_path, title_meta, desc_meta, tags_meta)
+            logger.info("[QualityGate] Score: %d/100 | Aprovado: %s", qr.score, qr.passed)
+            if not qr.passed:
+                logger.warning("[QualityGate] REPROVADO — issues: %s", qr.issues)
+        except Exception as qe:
+            logger.warning("[QualityGate] Erro ao checar qualidade: %s", qe)
+            qr = None
+
         # ── 9. ATUALIZAÇÃO DO BANCO ──────────────────────────────────────
         if conn:
             with conn.cursor() as cur:
+                quality_score = getattr(qr, "score", None) if qr else None
+                quality_passed = getattr(qr, "passed", True) if qr else True
                 cur.execute(
                     """UPDATE video_jobs
                        SET status = 'completed',
@@ -968,7 +1576,8 @@ def generate_video(job_id: str, payload: dict):
                     (output_path, job_id)
                 )
                 conn.commit()
-        logger.info("[JobDone] Job %s concluído com sucesso! Vídeo: %s", job_id, output_path)
+        logger.info("[JobDone] Job %s concluído! Vídeo: %s | Quality: %s/100",
+                    job_id, output_path, getattr(qr, 'score', 'N/A'))
 
     except Exception as e:
         logger.error("[JobError] Erro no job %s: %s", job_id, e)
@@ -986,8 +1595,74 @@ def generate_video(job_id: str, payload: dict):
                         (str(e)[:500], job_id)
                     )
                     conn.commit()
-            except Exception:
-                pass
+            except Exception as inner_e:
+                logger.error("[JobError] Falha ao atualizar erro no banco: %s", inner_e)
     finally:
         if conn:
-            conn.close()
+            try:
+                conn.close()
+                logger.info("[JobStore] Conexão DB fechada para job %s", job_id)
+            except Exception:
+                pass
+
+# =============================================================================
+# PASSO X — SMART CROP (OPENCV)
+# =============================================================================
+
+def get_face_center(frame: np.ndarray) -> Optional[Tuple[int, int]]:
+    """
+    Detecta o centro da face predominante no frame usando Haar Cascades.
+    """
+    try:
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+
+        if len(faces) > 0:
+            # Pega a maior face detectada
+            faces = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)
+            x, y, w, h = faces[0]
+            return (int(x + w / 2), int(y + h / 2))
+    except Exception as e:
+        logger.warning("[SmartCrop] Erro na deteccao facial: %s", e)
+    return None
+
+def apply_smart_crop(clip: VideoFileClip, target_w: int = 1080, target_h: int = 1920) -> VideoFileClip:
+    """
+    Aplica crop inteligente centralizado no rosto detectado.
+    Se nao detectar nada, cai no fallback de centralizacao padrao.
+    """
+    logger.info("[SmartCrop] Iniciando processamento de clip: %dx%d", clip.w, clip.h)
+
+    # Analisa o frame central do clip para encontrar o rosto
+    middle_frame = clip.get_frame(clip.duration / 2)
+    face_center = get_face_center(middle_frame)
+
+    # 1. Redimensiona para que a altura seja a do target (1920)
+    # ou a largura seja a do target (1080), mantendo aspect ratio
+    scale_factor = max(target_w / clip.w, target_h / clip.h)
+    new_w = int(clip.w * scale_factor)
+    new_h = int(clip.h * scale_factor)
+    
+    resized_clip = clip.resize(new_size=(new_w, new_h))
+
+    # 2. Calcula coordenadas de crop
+    if face_center:
+        center_x, center_y = face_center
+        # Ajusta o centro proporcionalmente ao resize
+        center_x = int(center_x * scale_factor)
+        center_y = int(center_y * scale_factor)
+        logger.info("[SmartCrop] Face detectada em: %d, %d", center_x, center_y)
+    else:
+        center_x, center_y = new_w // 2, new_h // 2
+        logger.info("[SmartCrop] Nenhuma face detectada, usando centro padrao.")
+
+    # Garante que o crop (1080x1920) esteja dentro das bordas do resized_clip
+    x1 = max(0, min(new_w - target_w, center_x - target_w // 2))
+    y1 = max(0, min(new_h - target_h, center_y - target_h // 2))
+    x2 = x1 + target_w
+    y2 = y1 + target_h
+
+    logger.info("[SmartCrop] Crop final: x1=%d, y1=%d, x2=%d, y2=%d", x1, y1, x2, y2)
+
+    return resized_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)

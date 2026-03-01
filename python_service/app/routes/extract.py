@@ -3,46 +3,44 @@
 # =============================================================================
 # Substitui diretamente o nó "Leitor Trafilatura" que rodava dentro do n8n.
 # Chamado pelo n8n via HTTP Request node.
-#
-# POST /extract
-#   Body: {
-#     "url": "https://...",
-#     "fallback_titulo": "...",
-#     "fallback_snippet": "...",
-#     "tamanho_minimo": 200
-#   }
 # =============================================================================
 
 from fastapi import APIRouter
 from pydantic import BaseModel, HttpUrl
 from trafilatura import fetch_url, extract
-
-from app.utils.errors import ServicoExterno, ConteudoVazio
-
 import re
 import requests
+import subprocess
+import os
+import tempfile
+from bs4 import BeautifulSoup
 
-
+from app.utils.errors import ServicoExterno, ConteudoVazio
 from app.utils.flaresolverr import check_flaresolverr_health, fetch_via_flaresolverr, HEADERS
-
+from app.services.google_news import decode_google_news_url
 
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
-
 router = APIRouter(prefix="/extract", tags=["extração"])
-
 
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
-
 class ExtractRequest(BaseModel):
     url: HttpUrl
     fallback_titulo: str = ""
     fallback_snippet: str = ""
     tamanho_minimo: int = 200
 
+class SelectorRequest(BaseModel):
+    url: HttpUrl
+    selectors: list[str]
+    attr: str | None = None
+
+class TranscriptRequest(BaseModel):
+    url: HttpUrl
+    lang: str = "pt"
 
 class ExtractResponse(BaseModel):
     status: str
@@ -51,7 +49,6 @@ class ExtractResponse(BaseModel):
     fonte_url: str
     total_caracteres: int
 
-
 class ExtractFallbackResponse(BaseModel):
     status: str
     texto_materia: str
@@ -59,125 +56,132 @@ class ExtractFallbackResponse(BaseModel):
     fonte_url: str
     erro: str
 
-
 # ---------------------------------------------------------------------------
-# Endpoint principal
+# Endpoints
 # ---------------------------------------------------------------------------
 
-import json
-import base64
-from lxml import html as lxml_html # Fail fast if missing
+@router.post("/transcript")
+async def extrair_transcript(dados: TranscriptRequest):
+    """
+    Extrai legendas do YouTube usando yt-dlp (já instalado).
+    """
+    url = str(dados.url)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_template = os.path.join(tmpdir, "subs")
+        try:
+            subprocess.run([
+                "yt-dlp", "--skip-download", "--write-auto-subs", "--write-subs",
+                "--sub-langs", f"{dados.lang}.*", "--sub-format", "vtt",
+                "--output", output_template, url
+            ], check=True, capture_output=True, timeout=40)
+            
+            files = os.listdir(tmpdir)
+            vtt_file = next((f for f in files if f.endswith(".vtt")), None)
+            
+            if not vtt_file:
+                return {"status": "erro", "erro": "Legendas não encontradas."}
+            
+            path = os.path.join(tmpdir, vtt_file)
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            lines = content.split("\n")
+            text_blocks = []
+            for line in lines:
+                line = line.strip()
+                if not line or "-->" in line or "WEBVTT" in line or line.isdigit():
+                    continue
+                clean = re.sub(r'<.*?>', '', line)
+                if clean and clean not in text_blocks:
+                    text_blocks.append(clean)
+            
+            transcript = " ".join(text_blocks)
+            return {"status": "sucesso", "transcript": transcript, "url": url}
+        except Exception as e:
+            return {"status": "erro", "erro": str(e), "url": url}
 
+@router.post("/selector")
+async def extrair_seletor(dados: SelectorRequest):
+    """
+    Equivalente ao Cheerio do n8n.
+    """
+    url = str(dados.url)
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, 'html.parser')
+        
+        resultados = {}
+        for sel in dados.selectors:
+            elements = soup.select(sel)
+            if dados.attr:
+                resultados[sel] = [el.get(dados.attr) for el in elements if el.get(dados.attr)]
+            else:
+                resultados[sel] = [el.get_text(strip=True) for el in elements]
+        
+        return {"status": "sucesso", "data": resultados, "url": url}
+    except Exception as e:
+        return {"status": "erro", "erro": str(e), "url": url}
 
-from app.services.google_news import decode_google_news_url
-
-@router.post(
-    "/",
-    response_model=ExtractResponse | ExtractFallbackResponse,
-    summary="Extrai texto e imagens de uma URL"
-)
+@router.post("/", response_model=ExtractResponse | ExtractFallbackResponse)
 async def extrair(dados: ExtractRequest):
-
-    # 0. RESOLVER REDIRECTS (Google News specially)
+    """
+    Extrai texto e imagens de uma URL usando Trafilatura.
+    """
     url_original = str(dados.url)
-    
-    from app.services.google_news import log_debug
-    log_debug(f"[Extract] ENTRY: {url_original[:60]}...")
-    
     url = await decode_google_news_url(url_original)
     
-    if url != url_original:
-        print(f"[Extract] URL Decodificada: {url_original} -> {url}")
-        
-    texto = ""
-
     try:
-        # 1. Tentativa com requests + headers (Muitas vezes mais confiável que Trafilatura direto)
         html = None
         try:
-            r = requests.get(url, headers=HEADERS, timeout=12, allow_redirects=True)
+            r = requests.get(url, headers=HEADERS, timeout=6, allow_redirects=True)
             if r.status_code == 200:
                 html = r.text
-        except Exception as e:
-            print(f"[Extract] Erro request inicial: {e}")
+        except:
+            pass
 
-        # 2. Fallback: Trafilatura direto (se html vazio)
+        if not html:
+            html = fetch_url(url)
+            
+        if not html and check_flaresolverr_health():
+            html = fetch_via_flaresolverr(url)
+            
         if not html:
             try:
-                html = fetch_url(url)
-            except:
+                from app.services.playwright_scraper import fetch_html_playwright_sync
+                html = fetch_html_playwright_sync(url)
+                if html:
+                    print(f"[Extract] Usando bypass via Playwright para {url}")
+            except ImportError:
                 pass
-                
-        # 3. Fallback: FlareSolverr
-        if not html and check_flaresolverr_health():
-            print(f"[Extract] Tentando FlareSolverr para: {url}")
-            html = fetch_via_flaresolverr(url)
 
         if not html:
-            raise ServicoExterno(mensagem="Não foi possível baixar o HTML da página.", url=url)
+            raise ServicoExterno(mensagem="HTML not found via any method", url=url)
 
-        # -----------------------------------------------------------------
-        # 3. Extração do conteúdo principal
-        # -----------------------------------------------------------------
-        try:
-            texto_md = extract(
-                html,
-                include_comments=False,
-                include_tables=True,
-                include_formatting=True,
-                include_images=True,
-                output_format="markdown"
-            )
-        except Exception as e:
-            print(f"[Extract] Erro no extract trafilatura: {e}")
-            texto_md = None
-
+        texto_md = extract(html, include_comments=False, include_tables=True, include_formatting=True, include_images=True, output_format="markdown")
         texto = texto_md.strip() if texto_md else ""
 
-        if not texto or len(texto) < dados.tamanho_minimo:
-            # Tentar extrair apenas o texto bruto se o markdown falhou
+        if len(texto) < dados.tamanho_minimo:
             alt_text = extract(html, include_tables=False)
             texto = alt_text.strip() if alt_text else ""
-            
             if len(texto) < dados.tamanho_minimo:
-                raise ConteudoVazio(
-                    mensagem=f"Extração falhou ou conteudo insuficiente ({len(texto)} chars)",
-                    url=url
-                )
+                raise ConteudoVazio(mensagem="Content too short", url=url)
 
-        # -----------------------------------------------------------------
-        # 4. Extração de imagens
-        # -----------------------------------------------------------------
         imagens = re.findall(r'!\[.*?\]\((.*?)\)', texto)
 
         return {
-            "status": "sucesso" if not imagens else "sucesso_com_imagens",
+            "status": "sucesso",
             "texto_materia": texto,
-            "imagem_principal": imagens[0] if imagens else None,
             "imagens_encontradas": imagens[:10],
             "fonte_url": url,
             "total_caracteres": len(texto)
         }
 
-    except (ServicoExterno, ConteudoVazio) as e:
-        # Tentar usar o fallback passado pelo n8n se existir
+    except Exception as e:
         fallback = f"{dados.fallback_titulo}\n\n{dados.fallback_snippet}".strip()
-        
         return {
             "status": "erro",
-            "texto_materia": fallback if len(fallback) > 20 else "",
-            "imagens_encontradas": [],
-            "fonte_url": url,
-            "erro": str(e)
-        }
-
-    except Exception as e:
-        print(f"[Extract] Erro inesperado: {e}")
-        fallback = f"{dados.fallback_titulo}\n\n{dados.fallback_snippet}".strip()
-        
-        return {
-            "status": "erro_inesperado",
-            "texto_materia": fallback if len(fallback) > 50 else "",
+            "texto_materia": fallback,
             "imagens_encontradas": [],
             "fonte_url": url,
             "erro": str(e)

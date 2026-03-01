@@ -8,7 +8,8 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 import requests
-import re
+from typing import List, Optional
+from app.services.youtube_transcript import get_transcript
 
 router = APIRouter(prefix="/media", tags=["media"])
 
@@ -40,9 +41,33 @@ class RedditRequest(BaseModel):
 class RedditResponse(BaseModel):
     videos: list[dict] # [{title:..., url:...}]
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
+class YouTubeTranscriptRequest(BaseModel):
+    url: str
+    languages: list[str] = ["pt", "en"]
+
+class YouTubeTranscriptResponse(BaseModel):
+    status: str
+    transcript: Optional[str] = None
+    error: Optional[str] = None
+
+class MediaProcessRequest(BaseModel):
+    action: str
+    original_msg: str
+
+@router.post("/process")
+async def process_media(payload: MediaProcessRequest):
+    """
+    Acionado pelo Telegram Callback Handler para iniciar o processamento de um conteúdo aprovado.
+    """
+    print(f"[Media] Iniciando processamento: {payload.action} para {payload.original_msg[:50]}...")
+    
+    # Aqui dispararíamos o fluxo de roteirização/renderização.
+    # Por enquanto, retornamos sucesso para validar a integração do n8n.
+    return {
+        "status": "sucesso",
+        "message": f"Ação {payload.action} recebida e em processamento.",
+        "original_msg_preview": payload.original_msg[:100]
+    }
 
 @router.post("/scorebat", response_model=ScoreBatResponse)
 async def get_scorebat_media(payload: ScoreBatRequest):
@@ -137,3 +162,13 @@ async def get_reddit_goals(payload: RedditRequest):
     except Exception as e:
         print(f"[Reddit] Erro: {e}")
         return RedditResponse(videos=[])
+
+@router.post("/youtube-transcript", response_model=YouTubeTranscriptResponse)
+async def youtube_transcript(payload: YouTubeTranscriptRequest):
+    """
+    Extrai a transcrição de um vídeo do YouTube.
+    """
+    transcript = get_transcript(payload.url, languages=payload.languages)
+    if transcript:
+        return YouTubeTranscriptResponse(status="sucesso", transcript=transcript)
+    return YouTubeTranscriptResponse(status="erro", error="Não foi possível obter a transcrição.")

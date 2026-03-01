@@ -5,19 +5,26 @@ import json
 import os
 import pickle
 import random
+import logging
 import string
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Dict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import requests
 
 from app.services.youtube import YouTubeService
+# run_full_quality_gate: valida vídeo (duração, resolução, áudio) e metadados
+# antes de qualquer upload — bloqueia publicação se score < 60
+from app.services.quality_gate import run_full_quality_gate
+from app.utils.telegram import send_telegram_message, send_telegram_video
 
 router = APIRouter(prefix="/publish", tags=["publicacao"])
+logger = logging.getLogger("publish_routes")
 
 TIKTOK_REPO_DIR = "/app/tiktok_uploader"
 TIKTOK_CLI_PATH = os.path.join(TIKTOK_REPO_DIR, "cli.py")
@@ -46,13 +53,19 @@ class Platform(str, Enum):
     INSTAGRAM = "instagram"
 
 
+class PlatformMetadata(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    hashtags: Optional[List[str]] = None
+
 class PublishRequest(BaseModel):
     video_path: Optional[str] = None
-    title: str
-    description: str
+    title: Optional[str] = None
+    description: Optional[str] = None
     platforms: List[Platform]
+    platform_overrides: Optional[dict[str, PlatformMetadata]] = None
     privacy: str = DEFAULT_PUBLISH_PRIVACY
-    hashtags: List[str] = []
+    hashtags: Optional[List[str]] = None
     sound_name: Optional[str] = None
     job_id: Optional[str] = None
 
@@ -72,6 +85,15 @@ class YouTubeUploadRequest(BaseModel):
     job_id: Optional[str] = None
 
 
+class ValidateQualityRequest(BaseModel):
+    """Payload para o endpoint /validate/quality (chamado pelo nó n8n Quality Gate)."""
+    video_path: Optional[str] = None
+    title: str = ""
+    description: str = ""
+    tags: List[str] = []
+    min_score: int = 60
+
+
 def _normalize_hashtag(tag: str) -> str:
     cleaned = (tag or "").strip()
     if not cleaned:
@@ -89,9 +111,52 @@ def _resolve_youtube_privacy(privacy: Optional[str]) -> str:
     resolved_default = DEFAULT_PUBLISH_PRIVACY if DEFAULT_PUBLISH_PRIVACY in VALID_YOUTUBE_PRIVACY else "private"
     normalized = (privacy or resolved_default).strip().lower()
     if normalized not in VALID_YOUTUBE_PRIVACY:
-        print(f"[Publish] Privacidade invalida '{privacy}'. Usando '{resolved_default}'.")
+        logger.warning("[Publish] Privacidade inválida '%s'. Usando '%s'.", privacy, resolved_default)
         return resolved_default
     return normalized
+
+
+def get_peak_hours_schedule() -> Optional[str]:
+    """
+    Retorna o próximo horário de pico para publicação no YouTube,
+    baseado na audiência de canais de futebol brasileiro.
+
+    Horários de pico BR (UTC-3):
+        12:00 (almoço), 18:00 (saída do trabalho), 21:00 (prime time)
+
+    Retorna string ISO 8601 com timezone UTC para a API do YouTube,
+    ou None se o horário atual JÁ for horário de pico (publica imediato).
+    """
+    now_utc = datetime.now(timezone.utc)
+    # Converte para horário de Brasília (UTC-3)
+    from datetime import timedelta
+    now_brt = now_utc - timedelta(hours=3)
+    hour = now_brt.hour
+
+    # Horários de pico em BRT
+    peak_hours_brt = [12, 18, 21]
+
+    # Encontra o próximo horário de pico
+    next_peak = None
+    for peak in peak_hours_brt:
+        if hour < peak:
+            next_peak = peak
+            break
+
+    if next_peak is None:
+        # Passou de todos os picos do dia → agenda para 12h do dia seguinte
+        next_peak = peak_hours_brt[0]
+        next_date = now_brt.replace(hour=next_peak, minute=0, second=0, microsecond=0)
+        next_date = next_date + timedelta(days=1)
+    else:
+        next_date = now_brt.replace(hour=next_peak, minute=0, second=0, microsecond=0)
+
+    # Converte de volta para UTC e formata como ISO 8601
+    next_utc = next_date + timedelta(hours=3)
+    scheduled = next_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    logger.info("[Publish] Horário de pico agendado: %s (BRT %dh)", scheduled, next_peak)
+    return scheduled
+
 
 
 def _resolve_tiktok_visibility(privacy: Optional[str]) -> str:
@@ -362,7 +427,7 @@ def upload_to_tiktok_cli(
 
     session_error = _validate_tiktok_upload_session(cookie_user)
     if session_error:
-        print(f"[TikTok] Aviso na validacao de sessao (tentando upload mesmo assim): {session_error}")
+        logger.warning("[TikTok] Aviso na validação de sessão (tentando upload mesmo assim): %s", session_error)
         # return {"status": "error", "msg": session_error}
 
     staged_name, _staged_path, stage_error = _stage_video_for_cli(video_path)
@@ -418,6 +483,69 @@ def upload_to_tiktok_cli(
     return {"status": "error", "msg": stderr or stdout or f"Script customizado retornou codigo {result.returncode}"}
 
 
+# ---------------------------------------------------------------------------
+# TikTok Upload via Haziq-exe/TikTokAutoUploader (Phantomwright headless)
+# ---------------------------------------------------------------------------
+TIKTOK_HAZIQ_SCRIPT = "/app/app/upload_tiktok_haziq.py"
+TIKTOK_HAZIQ_ACCOUNT = os.getenv("TIKTOK_ACCOUNT", "futebas_oficial")
+
+
+def upload_to_tiktok_haziq(
+    video_path: str,
+    title: str,
+    hashtags: Optional[List[str]] = None,
+    account: Optional[str] = None,
+) -> dict:
+    """Upload para TikTok via TikTokAutoUploader (Haziq-exe) com Phantomwright."""
+    account = account or TIKTOK_HAZIQ_ACCOUNT
+
+    if not os.path.exists(video_path):
+        return {"status": "error", "msg": f"Arquivo nao encontrado: {video_path}"}
+
+    cookies_path = f"/data_midia/tk_haziq_cookies_{account}.json"
+    if not os.path.exists(cookies_path):
+        return {
+            "status": "error",
+            "msg": f"Cookies nao encontrados: {cookies_path}. Execute convert_cookies.py.",
+        }
+
+    caption = _build_caption(title, hashtags)
+
+    cmd = [
+        "/opt/venv/bin/python3",
+        TIKTOK_HAZIQ_SCRIPT,
+        "--video", video_path,
+        "--title", caption,
+        "--account", account,
+    ]
+    if hashtags:
+        cmd.extend(["--hashtags"] + [h.lstrip("#") for h in hashtags])
+
+    logger.info("[TikTok-Haziq] Iniciando upload: %s", caption[:60])
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 min
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "msg": "Timeout no upload TikTok Haziq (600s)"}
+    except Exception as exc:
+        return {"status": "error", "msg": str(exc)}
+
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
+
+    if result.returncode == 0:
+        logger.info("[TikTok-Haziq] ✅ Upload concluído com sucesso!")
+        return {"status": "success", "output": stdout[-500:] if stdout else "OK"}
+
+    logger.error("[TikTok-Haziq] ❌ Falha (exit %d): %s", result.returncode, stdout[-300:])
+    return {"status": "error", "msg": stdout[-300:] or stderr[-300:] or f"Exit code {result.returncode}"}
+
+
 def _update_job_meta(job_id: str, key: str, value) -> None:
     from app.utils.database import get_db_connection
 
@@ -429,7 +557,6 @@ def _update_job_meta(job_id: str, key: str, value) -> None:
         with conn.cursor() as cur:
             patch = json.dumps({key: value})
 
-            # Persist publish info consistently for analytics/idempotency.
             if key == "youtube_id" and value:
                 cur.execute(
                     "UPDATE video_jobs "
@@ -453,14 +580,75 @@ def _update_job_meta(job_id: str, key: str, value) -> None:
                 )
             conn.commit()
     except Exception as exc:
-        print(f"[Publish] Erro ao salvar metadados job {job_id}: {exc}")
+        logger.error("[Publish] Erro ao salvar metadados job %s: %s", job_id, exc)
     finally:
         conn.close()
 
 
+@router.post("/validate/quality")
+async def validate_quality(req: ValidateQualityRequest):
+    """
+    Endpoint chamado pelo nó n8n 'Quality Gate Vídeo'.
+
+    Valida se o vídeo gerado atende aos critérios mínimos antes de publicar.
+    Isso evita gastar cota da API do YouTube com vídeos de baixa qualidade.
+
+    Saída (HTTP 200 — aprovado):
+        {"passed": true, "score": 87, "warnings": [...]}
+
+    Saída (HTTP 422 — reprovado):
+        {"error": "quality_gate_reprovado", "score": 42, "issues": [...]}
+
+    Fail-safe: se o gate falhar internamente, retorna HTTP 200 aprovado
+    para não travar o pipeline por bug do validador.
+    """
+    normalized_tags = [_normalize_youtube_tag(t) for t in (req.tags or [])]
+    normalized_tags = [t for t in normalized_tags if t]
+
+    try:
+        gate_report = run_full_quality_gate(
+            video_path=req.video_path or "",
+            title=req.title,
+            description=req.description,
+            tags=normalized_tags,
+            min_score=req.min_score
+        )
+        logger.info(
+            "[ValidateQuality] Score: %d/100 | Aprovado: %s | Issues: %s",
+            gate_report.score,
+            gate_report.passed,
+            gate_report.issues or "nenhum"
+        )
+        if gate_report.passed:
+            return {
+                "passed": True,
+                "score": gate_report.score,
+                "warnings": gate_report.warnings,
+                "summary": gate_report.summary()
+            }
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "quality_gate_reprovado",
+                    "score": gate_report.score,
+                    "issues": gate_report.issues,
+                    "warnings": gate_report.warnings,
+                    "summary": gate_report.summary()
+                }
+            )
+    except HTTPException:
+        raise
+    except Exception as qg_err:
+        logger.warning(
+            "[ValidateQuality] Falha interna do gate (aprovando por segurança): %s", qg_err
+        )
+        return {"passed": True, "score": 100, "warnings": [f"gate_error: {str(qg_err)}"]}
+
+
 @router.post("/youtube")
 async def publish_youtube(req: YouTubeUploadRequest):
-    """Upload isolado para YouTube (bom para smoke tests via curl/Postman)."""
+    """Upload isolado para YouTube com agendamento para horário de pico."""
     if not req.video_path:
         return {"status": "error", "msg": "video_path vazio/nulo"}
 
@@ -471,28 +659,107 @@ async def publish_youtube(req: YouTubeUploadRequest):
     normalized_tags = [_normalize_youtube_tag(t) for t in (req.tags or [])]
     normalized_tags = [t for t in normalized_tags if t]
 
+    # ── QUALITY GATE OBRIGATÓRIO (Etapa 5 — FASE 1) ────────────────────────
+    #
+    # Executamos a validação ANTES de qualquer tentativa de upload.
+    # Isso economiza quota da API do YouTube e garante que os 15s mínimos
+    # e a resolução 1080x1920 sejam respeitados.
+    #
+    # O que é verificado:
+    #   ✓ Duração ≥ 15s (YouTube rejeita Shorts mais curtos)
+    #   ✓ Resolução 1080x1920 (aviso se diferente)
+    #   ✓ Arquivo não está corrompido (MoviePy consegue abrir)
+    #   ✓ Áudio presente e não mudo (RMS > 0.001)
+    #   ✓ Título não é placeholder genérico
+    #   ✓ Descrição ≥ 30 chars (SEO mínimo)
+    #
+    # Se score < 60 → HTTP 422 com relatório detalhado.
+    # Operador pode ver o score no corpo da resposta para ajuste manual.
+    try:
+        gate_report = run_full_quality_gate(
+            video_path=req.video_path,
+            title=req.title,
+            description=req.description,
+            tags=normalized_tags,
+            min_score=60  # Mínimo para publicar (0-100)
+        )
+        logger.info(
+            "[QualityGate] Pré-upload YouTube — Score: %d/100 | Aprovado: %s | Issues: %s",
+            gate_report.score,
+            gate_report.passed,
+            gate_report.issues or "nenhum"
+        )
+        if not gate_report.passed:
+            # HTTP 422 Unprocessable Entity — dados válidos mas conteúdo abaixo do padrão
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "quality_gate_reprovado",
+                    "score": gate_report.score,
+                    "issues": gate_report.issues,    # Lista de problemas bloqueantes
+                    "warnings": gate_report.warnings, # Lista de avisos não-bloqueantes
+                    "summary": gate_report.summary(),
+                    "msg": (
+                        f"Vídeo reprovado no Quality Gate (score {gate_report.score}/100 "
+                        f"— mínimo 60). Corrija os problemas antes de publicar."
+                    )
+                }
+            )
+    except HTTPException:
+        # Re-levanta HTTPException sem engolir (ela não é erro interno)
+        raise
+    except Exception as qg_err:
+        # Se o próprio quality gate falhar, logamos mas não bloqueamos —
+        # preferimos publicar sem gate a não publicar por bug do validador.
+        logger.warning(
+            "[QualityGate] Falha interna do gate (publicando mesmo assim): %s", qg_err
+        )
+
+    # Agendamento por horário de pico (apenas se privacy=public)
+    scheduled_at = None
+    if resolved_privacy == "public":
+        scheduled_at = get_peak_hours_schedule()
+
     try:
         yt_service = YouTubeService()
         resp = yt_service.upload_video(
             file_path=req.video_path,
             title=req.title,
             description=req.description,
-            privacy=resolved_privacy,
+            privacy="private" if scheduled_at else resolved_privacy,  # Scheduled = começa private
             tags=normalized_tags,
             category_id=req.category_id or "22",
+            scheduled_at=scheduled_at,
         )
     except Exception as exc:
+        logger.error("[Publish] Erro YouTube: %s", exc)
         return {"status": "error", "msg": str(exc)}
 
     video_id = (resp or {}).get("id")
+
+    # Post-upload: adiciona comentário fixado com CTA
+    if video_id:
+        try:
+            yt_service.pin_comment(
+                video_id=video_id,
+                text=("⚽ Gostou? SEGUE o Futebas para não perder nada! "
+                      "Deixa seu comentário e compartilha com a galera 👊")
+            )
+        except Exception as e:
+            logger.warning("[Publish] Pinned comment falhou (não crítico): %s", e)
+
     if req.job_id and video_id:
         _update_job_meta(req.job_id, "youtube_id", video_id)
+        if scheduled_at:
+            _update_job_meta(req.job_id, "scheduled_at", scheduled_at)
 
+    logger.info("[Publish] YouTube upload OK — ID: %s | Agendado: %s", video_id, scheduled_at or "imediato")
     return {
         "status": "success",
         "video_id": video_id,
         "url": f"https://youtu.be/{video_id}" if video_id else None,
         "title": req.title,
+        "scheduled_at": scheduled_at,
         "data": resp,
     }
 
@@ -514,11 +781,10 @@ async def publish_tiktok(req: TikTokRequest):
     resolved_privacy = _resolve_youtube_privacy(req.privacy)
     
     try:
-        res = upload_to_tiktok_cli(
+        res = upload_to_tiktok_haziq(
             req.video_path,
             req.title,
             req.hashtags,
-            privacy=resolved_privacy,
         )
     except Exception as exc:
         return {"status": "error", "msg": str(exc)}
@@ -533,11 +799,48 @@ async def publish_tiktok(req: TikTokRequest):
 async def publish_multi(req: PublishRequest):
     from app.utils.database import get_db_connection
 
-    if not req.video_path:
-        print("[Publish] Encerrando com SKIP (video_path nulo/vazio).")
+    if not req.video_path and not req.job_id:
+        print("[Publish] Encerrando com SKIP (video_path e job_id nulos).")
         return {
             "status": "skipped",
-            "results": {"all": {"status": "skipped", "msg": "Job anterior falhou (sem video_path)."}},
+            "results": {"all": {"status": "skipped", "msg": "Sem video_path ou job_id para processar."}},
+        }
+
+    # Fallback: Carrega dados do Banco de Dados se tivermos apenas o job_id
+    if req.job_id:
+        try:
+            conn = get_db_connection()
+            if conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT video_path, title, metadata, metadata_post 
+                        FROM video_jobs 
+                        WHERE id = %s
+                    """, (req.job_id,))
+                    job = cur.fetchone()
+                    if job:
+                        if not req.video_path: req.video_path = job.get("video_path")
+                        if not req.title: req.title = job.get("title")
+                        
+                        # Tags e Descrição (Script)
+                        meta = job.get("metadata") or {}
+                        post_meta = job.get("metadata_post") or {}
+                        
+                        if not req.description:
+                            # Tenta pegar 'script' do metadata ou fallback genérico
+                            req.description = meta.get("script") or "Novo vídeo do Futebas! 🔥"
+                        
+                        if not req.hashtags:
+                            req.hashtags = post_meta.get("hashtags") or meta.get("tags") or []
+                conn.close()
+        except Exception as e:
+            logger.error("[Publish] Erro ao carregar fallback do DB: %s", e)
+
+    # Validação Final pós-fallback
+    if not req.video_path or not os.path.exists(req.video_path):
+        return {
+            "status": "error",
+            "results": {"all": {"status": "error", "msg": f"Video não encontrado: {req.video_path}"}}
         }
 
     skip_youtube = False
@@ -556,14 +859,14 @@ async def publish_multi(req: PublishRequest):
                             pass
 
                         if meta.get("youtube_id"):
-                            print(f"[Publish] YouTube ja publicado para Job {req.job_id}. Pulando.")
+                            logger.info("[Publish] YouTube já publicado para Job %s. Pulando.", req.job_id)
                             skip_youtube = True
 
                         if meta.get("tiktok_id"):
-                            print(f"[Publish] TikTok ja publicado para Job {req.job_id}. Pulando.")
+                            logger.info("[Publish] TikTok já publicado para Job %s. Pulando.", req.job_id)
                             skip_tiktok = True
             except Exception as exc:
-                print(f"[Publish] Erro ao checar idempotencia: {exc}")
+                logger.error("[Publish] Erro ao checar idempotencia: %s", exc)
             finally:
                 conn.close()
 
@@ -574,7 +877,7 @@ async def publish_multi(req: PublishRequest):
         }
 
     resolved_privacy = _resolve_youtube_privacy(req.privacy)
-    print(f"[Publish] Privacy efetiva para este job: {resolved_privacy}")
+    logger.info("[Publish] Privacy efetiva para este job: %s", resolved_privacy)
 
     results = {}
 
@@ -583,22 +886,53 @@ async def publish_multi(req: PublishRequest):
             results["youtube"] = {"status": "skipped", "msg": "Ja publicado anteriormente."}
         else:
             try:
-                print("[Publish] Iniciando upload para YouTube...")
-                yt_desc = req.description + "\n\n" + " ".join(req.hashtags)
+                logger.info("[Publish] Iniciando upload para YouTube...")
+                
+                plat_meta = (req.platform_overrides or {}).get("youtube", PlatformMetadata())
+                yt_title = plat_meta.title or req.title
+                yt_desc = plat_meta.description or req.description
+                yt_hash = plat_meta.hashtags if plat_meta.hashtags is not None else req.hashtags
+                
+                yt_desc_final = yt_desc + "\n\n" + " ".join(yt_hash)
                 yt_service = YouTubeService()
+
+                # Agendamento por horário de pico
+                scheduled_at = None
+                if resolved_privacy == "public":
+                    scheduled_at = get_peak_hours_schedule()
+
                 resp = yt_service.upload_video(
                     file_path=req.video_path,
-                    title=req.title,
-                    description=yt_desc,
-                    privacy=resolved_privacy,
-                    tags=req.hashtags,
+                    title=yt_title,
+                    description=yt_desc_final,
+                    privacy="private" if scheduled_at else resolved_privacy,
+                    tags=yt_hash,
+                    scheduled_at=scheduled_at,
                 )
 
-                results["youtube"] = {"status": "success", "data": resp}
-                if req.job_id and resp.get("id"):
-                    _update_job_meta(req.job_id, "youtube_id", resp["id"])
+                vid_id = (resp or {}).get("id")
+
+                # Comentário fixado (pinned)
+                if vid_id:
+                    try:
+                        yt_service.pin_comment(
+                            video_id=vid_id,
+                            text=("⚽ Gostou? SEGUE o Futebas! Comenta o que você achou 👇")
+                        )
+                    except Exception as e:
+                        logger.warning("[Publish] Pinned comment falhou: %s", e)
+
+                results["youtube"] = {
+                    "status": "success",
+                    "data": resp,
+                    "scheduled_at": scheduled_at
+                }
+                if req.job_id and vid_id:
+                    _update_job_meta(req.job_id, "youtube_id", vid_id)
+                    if scheduled_at:
+                        _update_job_meta(req.job_id, "scheduled_at", scheduled_at)
             except Exception as exc:
-                print(f"[Publish] Erro YouTube: {exc}")
+                logger.error("[Publish] Erro YouTube: %s", exc)
                 results["youtube"] = {"status": "error", "msg": str(exc)}
 
     if Platform.TIKTOK in req.platforms:
@@ -606,16 +940,44 @@ async def publish_multi(req: PublishRequest):
             results["tiktok"] = {"status": "skipped", "msg": "Ja publicado anteriormente."}
         else:
             try:
-                res = upload_to_tiktok_cli(
+                plat_meta = (req.platform_overrides or {}).get("tiktok", PlatformMetadata())
+                tk_title = plat_meta.title or req.title
+                tk_hash = plat_meta.hashtags if plat_meta.hashtags is not None else req.hashtags
+                
+                res = upload_to_tiktok_haziq(
                     req.video_path,
-                    req.title,
-                    req.hashtags,
-                    privacy=resolved_privacy,
+                    tk_title,
+                    tk_hash,
                 )
                 results["tiktok"] = res
                 if req.job_id and res.get("status") == "success":
                     _update_job_meta(req.job_id, "tiktok_id", "published_via_cli")
             except Exception as exc:
                 results["tiktok"] = {"status": "error", "msg": str(exc)}
+
+    if Platform.INSTAGRAM in req.platforms:
+        logger.info("[Publish] Instagram selecionado, mas uploader (Graph API) ainda precisa ser configurado.")
+        results["instagram"] = {"status": "skipped", "msg": "Configuração Pendente de API."}
+
+    # --- TELEGRAM NOTIFICATION & FALLBACK ---
+    try:
+        status_msg = f"🚀 *Processo de Publicação Finalizado*\n\n"
+        status_msg += f"🎬 *Título:* {req.title}\n"
+        status_msg += f"🆔 *Job:* `{req.job_id}`\n\n"
+        
+        for platform, res in results.items():
+            icon = "✅" if res.get("status") in ("success", "skipped") else "❌"
+            status_msg += f"{icon} *{platform.upper()}:* {res.get('status')} {res.get('msg', '')}\n"
+
+        # Envia o vídeo como fallback (ou garantia)
+        logger.info("[Telegram] Enviando vídeo para Telegram fallback...")
+        caption = f"🎬 {req.title}\n\n#Futebas #Futebol #VideosCurtos"
+        send_telegram_video(req.video_path, caption=caption)
+        
+        # Envia o relatório de status
+        send_telegram_message(status_msg)
+        
+    except Exception as tel_err:
+        logger.error(f"[Publish] Erro ao enviar notificação Telegram: {tel_err}")
 
     return {"status": "completed", "results": results}

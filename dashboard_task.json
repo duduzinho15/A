@@ -1,0 +1,4 @@
+{
+    "description": "Create a Premium Monitoring Dashboard in React (Vite) for the Auto Content Factory. Design: Sleek Dark Mode, Glassmorphism, Neon Accents (No Purple). Features: 1. Health check status (CPU/Mem/Disk) from /maintenance/health. 2. Scraping Logs overview. 3. Video generation performance chart. 4. n8n workflow integration status. Use modern UI libraries like Framer Motion and Lucide-react.",
+    "framework": "React (Vite)"
+}

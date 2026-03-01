@@ -1,0 +1,20 @@
+services:
+  openhands:
+    image: ghcr.io/all-hands-ai/openhands:0.21
+    container_name: openhands
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - WORKSPACE_BASE=/opt/workspace_base
+      - WORKSPACE_MOUNT_PATH=${PWD}
+      - RUN_AS_OPENHANDS=true
+      - OPENHANDS_USER_ID=42420
+      - SANDBOX_LOCAL_RUNTIME_URL=http://host.docker.internal
+      - USE_HOST_NETWORK=false
+      - FILE_STORE=local
+      - FILE_STORE_PATH=/.openhands-state
+    volumes:
+      - ./:/opt/workspace_base
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/openhands_state:/.openhands-state
